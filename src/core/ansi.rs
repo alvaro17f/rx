@@ -1,28 +1,27 @@
 use std::io::Write;
 
-// --- ANSI escape codes ---
+// ANSI escape codes. Unused constants are kept for parity with the original
+// Zig source and potential future styling needs.
 
-#[allow(dead_code)]
 pub const RED: &str = "\x1b[31m";
 pub const GREEN: &str = "\x1b[32m";
 pub const YELLOW: &str = "\x1b[33m";
 pub const BLUE: &str = "\x1b[34m";
-#[allow(dead_code)]
+#[expect(dead_code, reason = "unused in current palette, kept for parity with Zig original")]
 pub const MAGENTA: &str = "\x1b[35m";
 pub const CYAN: &str = "\x1b[36m";
-#[allow(dead_code)]
+#[expect(dead_code, reason = "unused in current palette, kept for parity with Zig original")]
 pub const GRAY: &str = "\x1b[37m";
-#[allow(dead_code)]
+#[expect(dead_code, reason = "unused in current palette, kept for parity with Zig original")]
 pub const BLACK: &str = "\x1b[30m";
 pub const RESET: &str = "\x1b[0m";
-#[allow(dead_code)]
+#[expect(dead_code, reason = "unused in current palette, kept for parity with Zig original")]
 pub const BOLD: &str = "\x1b[1m";
-#[allow(dead_code)]
+#[expect(dead_code, reason = "unused in current palette, kept for parity with Zig original")]
 pub const UNDERLINE: &str = "\x1b[4m";
 
-// --- Formatting ---
-
-pub fn write_flush(writer: &mut dyn Write, msg: &str) -> Result<(), std::io::Error> {
+/// Write `msg` to `writer` and flush immediately.
+pub fn write_flush<W: Write + ?Sized>(writer: &mut W, msg: &str) -> Result<(), std::io::Error> {
     writer.write_all(msg.as_bytes())?;
     writer.flush()
 }
@@ -47,9 +46,9 @@ mod tests {
     }
 
     #[test]
-    fn write_flush_writes_bytes() {
+    fn write_flush_writes_exact_bytes() {
         let mut buf = Vec::new();
         write_flush(&mut buf, "hello").unwrap();
-        assert_eq!(&buf, b"hello");
+        assert_eq!(buf, b"hello");
     }
 }

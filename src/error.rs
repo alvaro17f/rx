@@ -1,5 +1,9 @@
 use std::fmt;
 
+/// Application-level error type.
+///
+/// Uses a manual `Display` + `Error` impl to keep the dependency tree empty.
+/// `From<std::io::Error>` enables the `?` operator for IO fallibility.
 #[derive(Debug)]
 pub enum Error {
     Io(std::io::Error),
@@ -35,29 +39,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn display_io_error() {
+    fn display_io_error_contains_io_prefix() {
         let err = Error::Io(std::io::Error::new(std::io::ErrorKind::Other, "test"));
         assert!(err.to_string().contains("IO error"));
     }
 
     #[test]
-    fn display_git_pull_failed() {
+    fn display_git_pull_failed_matches_literal() {
         assert_eq!(Error::GitPullFailed.to_string(), "Failed to pull changes");
     }
 
     #[test]
-    fn source_io_error() {
+    fn source_io_error_yields_some() {
         let err = Error::Io(std::io::Error::new(std::io::ErrorKind::Other, "test"));
         assert!(std::error::Error::source(&err).is_some());
     }
 
     #[test]
-    fn source_git_pull_failed() {
+    fn source_git_pull_failed_yields_none() {
         assert!(std::error::Error::source(&Error::GitPullFailed).is_none());
     }
 
     #[test]
-    fn from_io_error() {
+    fn from_io_error_produces_io_variant() {
         let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file");
         let err: Error = io_err.into();
         assert!(matches!(err, Error::Io(_)));

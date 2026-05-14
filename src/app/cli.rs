@@ -1,11 +1,14 @@
 use std::io::Write;
 
-use crate::core::commands;
 use crate::core::ansi;
+use crate::core::commands;
 use crate::error::Error;
 
 use crate::app::init::Config;
 
+/// Trait abstracting external dependencies for testability.
+///
+/// `RealDeps` wires real stdin/stdout/process; tests use mock impls.
 pub trait Deps {
     fn run_shell(&self, cmd: &str, output: bool) -> Result<i32, Error>;
     fn confirm(&self, default: bool, msg: Option<&str>) -> Result<bool, Error>;
@@ -13,6 +16,7 @@ pub trait Deps {
     fn config_print(&self, config: &Config) -> Result<(), Error>;
 }
 
+/// Zero-sized production dependency container.
 pub struct RealDeps;
 
 impl Deps for RealDeps {
@@ -38,7 +42,8 @@ impl Deps for RealDeps {
     }
 }
 
-pub fn cli(writer: &mut dyn Write, config: &Config, deps: &dyn Deps) -> Result<(), Error> {
+/// Main CLI workflow: print config, confirm, pull, update, diff, rebuild.
+pub fn cli<W: Write>(writer: &mut W, config: &Config, deps: &dyn Deps) -> Result<(), Error> {
     deps.print_title("RX Configuration")?;
     deps.config_print(config)?;
 
@@ -141,19 +146,22 @@ mod tests {
         }
     }
 
+    // ------------------------------------------------------------------
+    // confirm path
+    // ------------------------------------------------------------------
+
     #[test]
-    fn confirm_false_early_return() {
+    fn cli_confirm_false_returns_early_ok() {
         let deps = MockDeps {
             confirm_result: Box::new(|_, _| Ok(false)),
             ..mock_deps_ok()
         };
         let mut buf = Vec::new();
-        let config = default_config();
-        cli(&mut buf, &config, &deps).unwrap();
+        cli(&mut buf, &default_config(), &deps).unwrap();
     }
 
     #[test]
-    fn confirm_decline_add_changes() {
+    fn cli_confirm_decline_add_changes_prints_not_added() {
         let deps = MockDeps {
             run_result: Box::new(|cmd, _| {
                 if cmd.contains("diff --exit-code") {
@@ -161,36 +169,42 @@ mod tests {
                 }
                 Ok(0)
             }),
-            confirm_result: Box::new(|default, msg| {
+            confirm_result: Box::new(|_, msg| {
                 if msg.is_some() {
                     Ok(false)
                 } else {
-                    Ok(default)
+                    Ok(true)
                 }
             }),
             ..mock_deps_ok()
         };
         let mut buf = Vec::new();
-        let config = default_config();
-        cli(&mut buf, &config, &deps).unwrap();
+        cli(&mut buf, &default_config(), &deps).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("Changes not added to stage"));
     }
 
+    // ------------------------------------------------------------------
+    // git pull
+    // ------------------------------------------------------------------
+
     #[test]
-    fn git_pull_fails() {
+    fn cli_git_pull_non_zero_returns_git_pull_failed() {
         let deps = MockDeps {
             run_result: Box::new(|_, _| Ok(1)),
             ..mock_deps_ok()
         };
         let mut buf = Vec::new();
-        let config = default_config();
-        let result = cli(&mut buf, &config, &deps);
+        let result = cli(&mut buf, &default_config(), &deps);
         assert!(result.is_err());
     }
 
+    // ------------------------------------------------------------------
+    // update / diff flags
+    // ------------------------------------------------------------------
+
     #[test]
-    fn update_and_diff_flags() {
+    fn cli_update_and_diff_true_runs_extra_commands() {
         let deps = MockDeps {
             run_result: Box::new(|cmd, _| {
                 if cmd.contains("diff --exit-code") {
@@ -207,19 +221,22 @@ mod tests {
         cli(&mut buf, &config, &deps).unwrap();
     }
 
+    // ------------------------------------------------------------------
+    // git diff / changes
+    // ------------------------------------------------------------------
+
     #[test]
-    fn no_git_changes() {
+    fn cli_no_git_changes_skips_stage() {
         let deps = MockDeps {
             run_result: Box::new(|_, _| Ok(0)),
             ..mock_deps_ok()
         };
         let mut buf = Vec::new();
-        let config = default_config();
-        cli(&mut buf, &config, &deps).unwrap();
+        cli(&mut buf, &default_config(), &deps).unwrap();
     }
 
     #[test]
-    fn git_add_failure_caught() {
+    fn cli_git_add_failure_catches_error() {
         let deps = MockDeps {
             run_result: Box::new(|cmd, _| {
                 if cmd.contains("add .") {
@@ -236,26 +253,29 @@ mod tests {
             ..mock_deps_ok()
         };
         let mut buf = Vec::new();
-        let config = default_config();
-        cli(&mut buf, &config, &deps).unwrap();
+        cli(&mut buf, &default_config(), &deps).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("Failed to add changes to the stage"));
     }
 
+    // ------------------------------------------------------------------
+    // RealDeps — exercise the thin glue layer
+    // ------------------------------------------------------------------
+
     #[test]
-    fn real_deps_run_shell_true() {
+    fn real_deps_run_shell_true_returns_zero() {
         let deps = RealDeps;
         assert_eq!(deps.run_shell("true", false).unwrap(), 0);
     }
 
     #[test]
-    fn real_deps_print_title() {
+    fn real_deps_print_title_does_not_panic() {
         let deps = RealDeps;
         assert!(deps.print_title("Test").is_ok());
     }
 
     #[test]
-    fn real_deps_config_print() {
+    fn real_deps_config_print_does_not_panic() {
         let deps = RealDeps;
         let config = Config {
             repo: String::from("r"),

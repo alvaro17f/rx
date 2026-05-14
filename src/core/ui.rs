@@ -3,7 +3,8 @@ use std::io::{BufRead, Write};
 use crate::core::ansi;
 use crate::error::Error;
 
-pub fn print_title(writer: &mut dyn Write, text: &str) -> Result<(), Error> {
+/// Print a banner title with ANSI-colored borders.
+pub fn print_title<W: Write>(writer: &mut W, text: &str) -> Result<(), Error> {
     let border: String = "*".repeat(text.len() + 4);
     ansi::write_flush(
         writer,
@@ -15,14 +16,26 @@ pub fn print_title(writer: &mut dyn Write, text: &str) -> Result<(), Error> {
     Ok(())
 }
 
-pub fn confirm(reader: &mut dyn BufRead, writer: &mut dyn Write, default: bool, msg: Option<&str>) -> Result<bool, Error> {
+/// Prompt user for confirmation on `reader`/`writer`.
+///
+/// `default` is returned when the user sends an empty line.
+pub fn confirm<R: BufRead, W: Write>(
+    reader: &mut R,
+    writer: &mut W,
+    default: bool,
+    msg: Option<&str>,
+) -> Result<bool, Error> {
     write_confirm_prompt(writer, default, msg)?;
     let mut line = String::new();
     reader.read_line(&mut line)?;
     parse_confirm_response(line.trim(), default)
 }
 
-fn write_confirm_prompt(writer: &mut dyn Write, default: bool, msg: Option<&str>) -> Result<(), Error> {
+fn write_confirm_prompt<W: Write>(
+    writer: &mut W,
+    default: bool,
+    msg: Option<&str>,
+) -> Result<(), Error> {
     let hint = if default {
         format!("{}(Y/n){}", ansi::GREEN, ansi::RESET)
     } else {
@@ -36,18 +49,17 @@ fn write_confirm_prompt(writer: &mut dyn Write, default: bool, msg: Option<&str>
     Ok(())
 }
 
+/// Parse a confirmation response line.
+///
+/// Returns `default` for empty input, `true` for "y"/"yes", `false` for
+/// "n"/"no" or any other input.
 pub fn parse_confirm_response(line: &str, default: bool) -> Result<bool, Error> {
-    let response = line.to_lowercase();
-    if response == "y" || response == "yes" {
-        return Ok(true);
+    match line.trim().to_lowercase().as_str() {
+        "y" | "yes" => Ok(true),
+        "n" | "no" => Ok(false),
+        "" => Ok(default),
+        _ => Ok(false),
     }
-    if response == "n" || response == "no" {
-        return Ok(false);
-    }
-    if response.is_empty() {
-        return Ok(default);
-    }
-    Ok(false)
 }
 
 #[cfg(test)]
@@ -55,7 +67,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn print_title_writes_output() {
+    fn print_title_contains_text_and_ansi_codes() {
         let mut buf = Vec::new();
         print_title(&mut buf, "RX").unwrap();
         let s = String::from_utf8(buf).unwrap();
@@ -66,44 +78,48 @@ mod tests {
     }
 
     #[test]
-    fn parse_confirm_y() {
+    fn parse_confirm_y_returns_true() {
         assert_eq!(parse_confirm_response("y", false).unwrap(), true);
+    }
+
+    #[test]
+    fn parse_confirm_uppercase_y_returns_true() {
         assert_eq!(parse_confirm_response("Y", false).unwrap(), true);
     }
 
     #[test]
-    fn parse_confirm_yes() {
+    fn parse_confirm_yes_returns_true() {
         assert_eq!(parse_confirm_response("yes", false).unwrap(), true);
     }
 
     #[test]
-    fn parse_confirm_n() {
+    fn parse_confirm_n_returns_false() {
         assert_eq!(parse_confirm_response("n", true).unwrap(), false);
     }
 
     #[test]
-    fn parse_confirm_no() {
+    fn parse_confirm_no_returns_false() {
         assert_eq!(parse_confirm_response("no", true).unwrap(), false);
     }
 
     #[test]
-    fn parse_confirm_empty_default_true() {
+    fn parse_confirm_empty_with_true_default_returns_true() {
         assert_eq!(parse_confirm_response("", true).unwrap(), true);
     }
 
     #[test]
-    fn parse_confirm_empty_default_false() {
+    fn parse_confirm_empty_with_false_default_returns_false() {
         assert_eq!(parse_confirm_response("", false).unwrap(), false);
     }
 
     #[test]
-    fn parse_confirm_garbage() {
+    fn parse_confirm_garbage_returns_false() {
         assert_eq!(parse_confirm_response("maybe", true).unwrap(), false);
         assert_eq!(parse_confirm_response("maybe", false).unwrap(), false);
     }
 
     #[test]
-    fn confirm_with_input_y() {
+    fn confirm_reads_y_and_returns_true() {
         let input = b"y\n";
         let mut reader = &input[..];
         let mut writer = Vec::new();
@@ -111,7 +127,7 @@ mod tests {
     }
 
     #[test]
-    fn confirm_with_input_n() {
+    fn confirm_reads_n_and_returns_false() {
         let input = b"n\n";
         let mut reader = &input[..];
         let mut writer = Vec::new();
@@ -119,7 +135,7 @@ mod tests {
     }
 
     #[test]
-    fn confirm_with_message() {
+    fn confirm_with_message_writes_message_to_writer() {
         let input = b"y\n";
         let mut reader = &input[..];
         let mut writer = Vec::new();
@@ -130,7 +146,7 @@ mod tests {
     }
 
     #[test]
-    fn confirm_default_true_empty() {
+    fn confirm_empty_line_uses_default_true() {
         let input = b"\n";
         let mut reader = &input[..];
         let mut writer = Vec::new();

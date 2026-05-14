@@ -1,9 +1,12 @@
 use std::process::{Command, Stdio};
 use std::io::Write;
 
+/// Path to the compiled `rx` binary, provided by Cargo for integration tests.
+const RX: &str = env!("CARGO_BIN_EXE_rx");
+
 #[test]
-fn help_flag() {
-    let output = Command::new("./target/debug/rx")
+fn help_flag_prints_rx_banner() {
+    let output = Command::new(RX)
         .arg("-h")
         .output()
         .expect("failed to run rx");
@@ -12,18 +15,18 @@ fn help_flag() {
 }
 
 #[test]
-fn version_flag() {
-    let output = Command::new("./target/debug/rx")
+fn version_flag_prints_semver() {
+    let output = Command::new(RX)
         .arg("-v")
         .output()
         .expect("failed to run rx");
-    let stdout = String::from_utf8_lossy(&output.stdout);
+        let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("0.1.0"));
 }
 
 #[test]
-fn unknown_flag_exits_with_error() {
-    let output = Command::new("./target/debug/rx")
+fn unknown_flag_exits_nonzero() {
+    let output = Command::new(RX)
         .arg("-x")
         .output()
         .expect("failed to run rx");
@@ -31,8 +34,8 @@ fn unknown_flag_exits_with_error() {
 }
 
 #[test]
-fn confirm_with_piped_stdin() {
-    let mut child = Command::new("./target/debug/rx")
+fn piped_stdin_decline_does_not_panic() {
+    let mut child = Command::new(RX)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -46,8 +49,8 @@ fn confirm_with_piped_stdin() {
 }
 
 #[test]
-fn main_no_args_with_decline() {
-    let _output = Command::new("./target/debug/rx")
+fn no_args_with_piped_stdin_runs_without_panic() {
+    let _output = Command::new(RX)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -57,8 +60,8 @@ fn main_no_args_with_decline() {
 }
 
 #[test]
-fn version_word() {
-    let output = Command::new("./target/debug/rx")
+fn version_word_prints_version() {
+    let output = Command::new(RX)
         .arg("version")
         .output()
         .expect("failed to run rx");
@@ -67,8 +70,8 @@ fn version_word() {
 }
 
 #[test]
-fn help_word() {
-    let output = Command::new("./target/debug/rx")
+fn help_word_prints_help_and_exits_zero() {
+    let output = Command::new(RX)
         .arg("help")
         .output()
         .expect("failed to run rx");
@@ -78,8 +81,8 @@ fn help_word() {
 }
 
 #[test]
-fn invalid_k_flag() {
-    let output = Command::new("./target/debug/rx")
+fn invalid_k_flag_exits_nonzero() {
+    let output = Command::new(RX)
         .args(["-k", "abc"])
         .output()
         .expect("failed to run rx");
