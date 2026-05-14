@@ -58,6 +58,12 @@ mod tests {
     }
 
     #[test]
+    fn failing_writer_flush_is_err() {
+        let mut w = FailingWriter;
+        assert!(std::io::Write::flush(&mut w).is_err());
+    }
+
+    #[test]
     fn write_flush_writes_exact_bytes() {
         let mut buf = Vec::new();
         write_flush(&mut buf, "hello").unwrap();

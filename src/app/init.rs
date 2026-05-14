@@ -577,6 +577,25 @@ mod tests {
         }
     }
 
+    struct CountingWriter {
+        fail_after: usize,
+        count: usize,
+    }
+
+    impl Write for CountingWriter {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.count += 1;
+            if self.count >= self.fail_after {
+                Err(io::Error::new(io::ErrorKind::Other, "fail"))
+            } else {
+                Ok(buf.len())
+            }
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
     #[test]
     fn print_help_error_propagation() {
         let mut writer = FailingWriter;
@@ -590,8 +609,60 @@ mod tests {
     }
 
     #[test]
-    fn config_print_error_propagation() {
-        let mut writer = FailingWriter;
+    fn config_print_error_propagation_line_1() {
+        let mut writer = CountingWriter { fail_after: 1, count: 0 };
+        let config = Config {
+            repo: String::from("r"),
+            hostname: String::from("h"),
+            keep: 1,
+            update: false,
+            diff: false,
+        };
+        assert!(config_print(&mut writer, &config).is_err());
+    }
+
+    #[test]
+    fn config_print_error_propagation_line_2() {
+        let mut writer = CountingWriter { fail_after: 2, count: 0 };
+        let config = Config {
+            repo: String::from("r"),
+            hostname: String::from("h"),
+            keep: 1,
+            update: false,
+            diff: false,
+        };
+        assert!(config_print(&mut writer, &config).is_err());
+    }
+
+    #[test]
+    fn config_print_error_propagation_line_3() {
+        let mut writer = CountingWriter { fail_after: 3, count: 0 };
+        let config = Config {
+            repo: String::from("r"),
+            hostname: String::from("h"),
+            keep: 1,
+            update: false,
+            diff: false,
+        };
+        assert!(config_print(&mut writer, &config).is_err());
+    }
+
+    #[test]
+    fn config_print_error_propagation_line_4() {
+        let mut writer = CountingWriter { fail_after: 4, count: 0 };
+        let config = Config {
+            repo: String::from("r"),
+            hostname: String::from("h"),
+            keep: 1,
+            update: false,
+            diff: false,
+        };
+        assert!(config_print(&mut writer, &config).is_err());
+    }
+
+    #[test]
+    fn config_print_error_propagation_line_5() {
+        let mut writer = CountingWriter { fail_after: 5, count: 0 };
         let config = Config {
             repo: String::from("r"),
             hostname: String::from("h"),

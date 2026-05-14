@@ -259,6 +259,12 @@ mod tests {
     }
 
     #[test]
+    fn failing_writer_flush_method_is_callable() {
+        let mut writer = FailingWriter;
+        assert!(io::Write::flush(&mut writer).is_ok());
+    }
+
+    #[test]
     fn cli_git_pull_non_zero_and_writer_fails_returns_error() {
         let deps = MockDeps {
             run_result: Box::new(|_, _| Ok(1)),
@@ -267,6 +273,46 @@ mod tests {
         let mut writer = FailingWriter;
         let result = cli(&mut writer, &default_config(), &deps);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_run_shell_error_propagates_from_git_pull() {
+        let deps = MockDeps {
+            run_result: Box::new(|_, _| Err(Error::GitPullFailed)),
+            ..mock_deps_ok()
+        };
+        let mut buf = Vec::new();
+        assert!(cli(&mut buf, &default_config(), &deps).is_err());
+    }
+
+    #[test]
+    fn cli_print_title_error_propagates_from_first_call() {
+        let deps = MockDeps {
+            print_title_fn: Box::new(|_| Err(Error::GitPullFailed)),
+            ..mock_deps_ok()
+        };
+        let mut buf = Vec::new();
+        assert!(cli(&mut buf, &default_config(), &deps).is_err());
+    }
+
+    #[test]
+    fn cli_config_print_error_propagates_from_deps() {
+        let deps = MockDeps {
+            config_print_fn: Box::new(|_| Err(Error::GitPullFailed)),
+            ..mock_deps_ok()
+        };
+        let mut buf = Vec::new();
+        assert!(cli(&mut buf, &default_config(), &deps).is_err());
+    }
+
+    #[test]
+    fn cli_confirm_error_propagates_from_deps() {
+        let deps = MockDeps {
+            confirm_result: Box::new(|_, _| Err(Error::GitPullFailed)),
+            ..mock_deps_ok()
+        };
+        let mut buf = Vec::new();
+        assert!(cli(&mut buf, &default_config(), &deps).is_err());
     }
 
     #[test]

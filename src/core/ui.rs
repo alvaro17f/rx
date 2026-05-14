@@ -168,17 +168,35 @@ mod tests {
         }
     }
 
+    #[test]
+    fn failing_writer_flush_is_ok() {
+        let mut w = FailingWriter;
+        assert!(io::Write::flush(&mut w).is_ok());
+    }
+
     struct FailingReader;
-    impl Read for FailingReader {
+    impl io::Read for FailingReader {
         fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
             Err(std::io::Error::new(std::io::ErrorKind::Other, "fail"))
         }
     }
-    impl BufRead for FailingReader {
+    impl io::BufRead for FailingReader {
         fn fill_buf(&mut self) -> io::Result<&[u8]> {
             Err(std::io::Error::new(std::io::ErrorKind::Other, "fail"))
         }
         fn consume(&mut self, _: usize) {}
+    }
+
+    #[test]
+    fn failing_reader_read_is_err() {
+        let mut r = FailingReader;
+        assert!(io::Read::read(&mut r, &mut [0]).is_err());
+    }
+
+    #[test]
+    fn failing_reader_consume_is_noop() {
+        let mut r = FailingReader;
+        io::BufRead::consume(&mut r, 10);
     }
 
     #[test]
