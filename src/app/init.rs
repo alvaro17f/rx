@@ -40,13 +40,26 @@ impl fmt::Display for Config {
     }
 }
 
-/// Read hostname from `/proc/sys/kernel/hostname`, falling back to the
-/// `HOSTNAME` environment variable, then `"unknown"`.
+/// Return the hostname: `/proc/sys/kernel/hostname` → `HOSTNAME` env → `"unknown"`.
 fn default_hostname() -> String {
-    std::fs::read_to_string("/proc/sys/kernel/hostname")
+    default_hostname_from(
+        || std::fs::read_to_string("/proc/sys/kernel/hostname").ok(),
+        || std::env::var("HOSTNAME").ok(),
+    )
+}
+
+/// Parameterized hostname resolution for testability.
+///
+/// `proc_hostname` tries to read `/proc/sys/kernel/hostname`,
+/// `env_hostname` falls back to the `HOSTNAME` env var,
+/// and both failing yields `"unknown"`.
+fn default_hostname_from(
+    proc_hostname: impl FnOnce() -> Option<String>,
+    env_hostname: impl FnOnce() -> Option<String>,
+) -> String {
+    proc_hostname()
         .map(|s| s.trim().to_owned())
-        .ok()
-        .or_else(|| std::env::var("HOSTNAME").ok())
+        .or_else(env_hostname)
         .unwrap_or_else(|| String::from("unknown"))
 }
 
@@ -162,26 +175,25 @@ pub fn parse_args(args: &[String], writer: &mut dyn Write) -> Parsed {
                             return Parsed::Error;
                         }
                         let value = args[i + 1].clone();
-                        match flag_char {
-                            'r' => config.repo = value,
-                            'n' => config.hostname = value,
-                            'k' => {
-                                match value.parse::<u8>() {
-                                    Ok(num) => config.keep = num,
-                                    Err(_) => {
-                                        ansi::write_flush(
-                                            writer,
-                                            &format!(
-                                                "{}Error: Value of \"-k\" flag is not numeric.\n{}",
-                                                ansi::RED, ansi::RESET
-                                            ),
-                                        )
-                                        .ok();
-                                        return Parsed::Error;
-                                    }
+                        if flag_char == 'r' {
+                            config.repo = value;
+                        } else if flag_char == 'n' {
+                            config.hostname = value;
+                        } else {
+                            match value.parse::<u8>() {
+                                Ok(num) => config.keep = num,
+                                Err(_) => {
+                                    ansi::write_flush(
+                                        writer,
+                                        &format!(
+                                            "{}Error: Value of \"-k\" flag is not numeric.\n{}",
+                                            ansi::RED, ansi::RESET
+                                        ),
+                                    )
+                                    .ok();
+                                    return Parsed::Error;
                                 }
                             }
-                            _ => unreachable!(),
                         }
                         skip_next = true;
                         break;
@@ -227,6 +239,7 @@ pub fn run<W: Write>(
 mod tests {
     use super::*;
     use crate::app::cli::Deps;
+    use std::io;
 
     fn args(from: &[&str]) -> Vec<String> {
         from.iter().map(|s| s.to_string()).collect()
@@ -287,7 +300,6 @@ mod tests {
         };
         config_print(&mut buf, &config).unwrap();
         let s = String::from_utf8(buf).unwrap();
-        // The "diff" line is last with new_line=false → no trailing "\n"
         assert!(!s.ends_with('\n'));
     }
 
@@ -467,20 +479,20 @@ mod tests {
     #[test]
     fn run_help_flag_routes_to_help() {
         let mut buf = Vec::new();
-        run(&args(&["rx", "-h"]), &mut buf, &MockDeps).unwrap();
+        run(&args(&["rx", "-h"]), &mut buf, &MockCliDeps).unwrap();
         assert!(String::from_utf8(buf).unwrap().contains("RX"));
     }
 
     #[test]
     fn run_version_flag_routes_to_version() {
         let mut buf = Vec::new();
-        run(&args(&["rx", "-v"]), &mut buf, &MockDeps).unwrap();
+        run(&args(&["rx", "-v"]), &mut buf, &MockCliDeps).unwrap();
     }
 
     #[test]
     fn run_unknown_flag_returns_error() {
         let mut buf = Vec::new();
-        assert!(run(&args(&["rx", "-x"]), &mut buf, &MockDeps).is_err());
+        assert!(run(&args(&["rx", "-x"]), &mut buf, &MockCliDeps).is_err());
     }
 
     #[test]
@@ -524,24 +536,87 @@ mod tests {
         assert!(c.to_string().contains("repo"));
     }
 
+    #[test]
+    fn default_hostname_from_proc_succeeds() {
+        let result = default_hostname_from(
+            || Some(String::from("myhost\n")),
+            || None,
+        );
+        assert_eq!(result, "myhost");
+    }
+
+    #[test]
+    fn default_hostname_from_falls_back_to_env() {
+        let result = default_hostname_from(
+            || None,
+            || Some(String::from("envhost")),
+        );
+        assert_eq!(result, "envhost");
+    }
+
+    #[test]
+    fn default_hostname_from_falls_back_to_unknown() {
+        let result = default_hostname_from(
+            || None,
+            || None,
+        );
+        assert_eq!(result, "unknown");
+    }
+
+    // ------------------------------------------------------------------
+    // error propagation via FailingWriter
+    // ------------------------------------------------------------------
+
+    struct FailingWriter;
+    impl Write for FailingWriter {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(std::io::Error::new(std::io::ErrorKind::Other, "fail"))
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn print_help_error_propagation() {
+        let mut writer = FailingWriter;
+        assert!(print_help(&mut writer).is_err());
+    }
+
+    #[test]
+    fn print_version_error_propagation() {
+        let mut writer = FailingWriter;
+        assert!(print_version(&mut writer).is_err());
+    }
+
+    #[test]
+    fn config_print_error_propagation() {
+        let mut writer = FailingWriter;
+        let config = Config {
+            repo: String::from("r"),
+            hostname: String::from("h"),
+            keep: 1,
+            update: false,
+            diff: false,
+        };
+        assert!(config_print(&mut writer, &config).is_err());
+    }
+
+    #[test]
+    fn print_config_line_error_propagation() {
+        let mut writer = FailingWriter;
+        assert!(print_config_line(&mut writer, "k", "v", true).is_err());
+    }
+
     // ------------------------------------------------------------------
     // shared mock deps
     // ------------------------------------------------------------------
-
-    struct MockDeps;
-
-    impl Deps for MockDeps {
-        fn run_shell(&self, _: &str, _: bool) -> Result<i32, Error> { Ok(0) }
-        fn confirm(&self, _: bool, _: Option<&str>) -> Result<bool, Error> { Ok(false) }
-        fn print_title(&self, _: &str) -> Result<(), Error> { Ok(()) }
-        fn config_print(&self, _: &Config) -> Result<(), Error> { Ok(()) }
-    }
 
     struct MockCliDeps;
 
     impl Deps for MockCliDeps {
         fn run_shell(&self, _: &str, _: bool) -> Result<i32, Error> { Ok(0) }
-        fn confirm(&self, _: bool, _: Option<&str>) -> Result<bool, Error> { Ok(false) }
+        fn confirm(&self, _: bool, _: Option<&str>) -> Result<bool, Error> { Ok(true) }
         fn print_title(&self, _: &str) -> Result<(), Error> { Ok(()) }
         fn config_print(&self, _: &Config) -> Result<(), Error> { Ok(()) }
     }

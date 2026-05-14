@@ -98,6 +98,7 @@ pub fn cli<W: Write>(writer: &mut W, config: &Config, deps: &dyn Deps) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io;
 
     struct MockDeps {
         run_result: Box<dyn Fn(&str, bool) -> Result<i32, Error>>,
@@ -133,13 +134,7 @@ mod tests {
 
     fn mock_deps_ok() -> MockDeps {
         MockDeps {
-            run_result: Box::new(|cmd, _| {
-                if cmd.contains("diff --exit-code") {
-                    Ok(1)
-                } else {
-                    Ok(0)
-                }
-            }),
+            run_result: Box::new(|_, _| Ok(0)),
             confirm_result: Box::new(|_, _| Ok(true)),
             print_title_fn: Box::new(|_| Ok(())),
             config_print_fn: Box::new(|_| Ok(())),
@@ -205,20 +200,11 @@ mod tests {
 
     #[test]
     fn cli_update_and_diff_true_runs_extra_commands() {
-        let deps = MockDeps {
-            run_result: Box::new(|cmd, _| {
-                if cmd.contains("diff --exit-code") {
-                    return Ok(1);
-                }
-                Ok(0)
-            }),
-            ..mock_deps_ok()
-        };
         let mut buf = Vec::new();
         let mut config = default_config();
         config.update = true;
         config.diff = true;
-        cli(&mut buf, &config, &deps).unwrap();
+        cli(&mut buf, &config, &mock_deps_ok()).unwrap();
     }
 
     // ------------------------------------------------------------------
@@ -256,6 +242,93 @@ mod tests {
         cli(&mut buf, &default_config(), &deps).unwrap();
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("Failed to add changes to the stage"));
+    }
+
+    // ------------------------------------------------------------------
+    // error propagation via FailingWriter
+    // ------------------------------------------------------------------
+
+    struct FailingWriter;
+    impl Write for FailingWriter {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(std::io::Error::new(std::io::ErrorKind::Other, "fail"))
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn cli_git_pull_non_zero_and_writer_fails_returns_error() {
+        let deps = MockDeps {
+            run_result: Box::new(|_, _| Ok(1)),
+            ..mock_deps_ok()
+        };
+        let mut writer = FailingWriter;
+        let result = cli(&mut writer, &default_config(), &deps);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_stage_decline_with_failing_writer() {
+        // diff_status=1, stage confirm=false → write_flush "Changes not added"
+        let deps = MockDeps {
+            run_result: Box::new(|cmd, _| {
+                if cmd.contains("diff --exit-code") {
+                    Ok(1)
+                } else {
+                    Ok(0)
+                }
+            }),
+            confirm_result: Box::new(|_, msg| Ok(msg.is_none())),
+            ..mock_deps_ok()
+        };
+        let mut writer = FailingWriter;
+        let result = cli(&mut writer, &default_config(), &deps);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_git_add_success_with_failing_writer() {
+        // diff_status=1, stage confirm=true, git_add Ok(0) → write_flush "Changes added"
+        let deps = MockDeps {
+            run_result: Box::new(|cmd, _| {
+                if cmd.contains("diff --exit-code") {
+                    Ok(1)
+                } else {
+                    Ok(0)
+                }
+            }),
+            confirm_result: Box::new(|_, _| Ok(true)),
+            ..mock_deps_ok()
+        };
+        let mut writer = FailingWriter;
+        let result = cli(&mut writer, &default_config(), &deps);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_git_add_failure_with_failing_writer() {
+        // diff_status=1, stage confirm=true, git_add Err → write_flush "Failed to add"
+        let deps = MockDeps {
+            run_result: Box::new(|cmd, _| {
+                if cmd.contains("add .") {
+                    Err(Error::Io(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "mock",
+                    )))
+                } else if cmd.contains("diff --exit-code") {
+                    Ok(1)
+                } else {
+                    Ok(0)
+                }
+            }),
+            confirm_result: Box::new(|_, _| Ok(true)),
+            ..mock_deps_ok()
+        };
+        let mut writer = FailingWriter;
+        let result = cli(&mut writer, &default_config(), &deps);
+        assert!(result.is_err());
     }
 
     // ------------------------------------------------------------------

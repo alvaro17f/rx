@@ -45,10 +45,44 @@ mod tests {
         assert!(!UNDERLINE.is_empty());
     }
 
+    struct FailingWriter;
+
+    impl Write for FailingWriter {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::new(std::io::ErrorKind::Other, "fail"))
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::new(std::io::ErrorKind::Other, "fail"))
+        }
+    }
+
     #[test]
     fn write_flush_writes_exact_bytes() {
         let mut buf = Vec::new();
         write_flush(&mut buf, "hello").unwrap();
         assert_eq!(buf, b"hello");
+    }
+
+    #[test]
+    fn write_flush_propagates_write_error() {
+        let mut writer = FailingWriter;
+        assert!(write_flush(&mut writer, "x").is_err());
+    }
+
+    #[test]
+    fn write_flush_propagates_flush_error_on_empty_write() {
+        // Write succeeds but flush fails
+        struct FlushFailingWriter;
+        impl Write for FlushFailingWriter {
+            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+                Ok(buf.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Err(std::io::Error::new(std::io::ErrorKind::Other, "fail"))
+            }
+        }
+        let mut writer = FlushFailingWriter;
+        assert!(write_flush(&mut writer, "x").is_err());
     }
 }

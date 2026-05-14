@@ -65,6 +65,7 @@ pub fn parse_confirm_response(line: &str, default: bool) -> Result<bool, Error> 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io;
 
     #[test]
     fn print_title_contains_text_and_ansi_codes() {
@@ -151,5 +152,61 @@ mod tests {
         let mut reader = &input[..];
         let mut writer = Vec::new();
         assert!(confirm(&mut reader, &mut writer, true, None).unwrap());
+    }
+
+    // ------------------------------------------------------------------
+    // error propagation
+    // ------------------------------------------------------------------
+
+    struct FailingWriter;
+    impl Write for FailingWriter {
+        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
+            Err(std::io::Error::new(std::io::ErrorKind::Other, "fail"))
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    struct FailingReader;
+    impl Read for FailingReader {
+        fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+            Err(std::io::Error::new(std::io::ErrorKind::Other, "fail"))
+        }
+    }
+    impl BufRead for FailingReader {
+        fn fill_buf(&mut self) -> io::Result<&[u8]> {
+            Err(std::io::Error::new(std::io::ErrorKind::Other, "fail"))
+        }
+        fn consume(&mut self, _: usize) {}
+    }
+
+    #[test]
+    fn print_title_error_propagation() {
+        let mut writer = FailingWriter;
+        assert!(print_title(&mut writer, "X").is_err());
+    }
+
+    #[test]
+    fn confirm_error_from_writer() {
+        let input = b"y\n";
+        let mut reader = &input[..];
+        let mut writer = FailingWriter;
+        assert!(confirm(&mut reader, &mut writer, false, None).is_err());
+    }
+
+    #[test]
+    fn confirm_error_from_writer_with_message() {
+        let input = b"y\n";
+        let mut reader = &input[..];
+        let mut writer = FailingWriter;
+        assert!(confirm(&mut reader, &mut writer, false, Some("X")).is_err());
+    }
+
+    #[test]
+    fn confirm_error_from_reader_read_line() {
+        let mut reader = FailingReader;
+        let mut writer = Vec::new();
+        assert!(confirm(&mut reader, &mut writer, false, None).is_err());
     }
 }
