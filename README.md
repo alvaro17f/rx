@@ -46,8 +46,8 @@ cargo build --release
 
 ```bash
 nix build                          # default package
-nix build .#rx                     # explicit attribute
-nix build .#cross.x86_64-linux-musl.rx --impure  # cross-compile
+nix build .#default                # explicit attribute
+nix build .#cross.x86_64-linux-musl.default --impure  # cross-compile
 nix develop                        # dev shell
 ```
 
@@ -157,8 +157,8 @@ cargo fmt --check   # format check
   inputs.nixpkgs.url = "github:nixos/nixpkgs";
 
   outputs = { self, nixpkgs, ... }:
-    # Build: nix build .#rx
-    # Cross: nix build .#cross.x86_64-linux-musl.rx --impure
+    # Build: nix build .#default
+    # Cross: nix build .#cross.x86_64-linux-musl.default --impure
     # Dev:   nix develop
 }
 ```
