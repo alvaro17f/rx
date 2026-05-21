@@ -34,7 +34,7 @@
         in
         {
           # e.g. nix build .#rx
-          rx = pkgs.rustPlatform.buildRustPackage {
+          default = pkgs.rustPlatform.buildRustPackage {
             name = "rx";
             src = ./.;
             cargoLock = {
@@ -57,7 +57,7 @@
           );
         }
       );
-      defaultPackage = forAllSystems (system: self.packages.${system}.rx);
+      defaultPackage = forAllSystems (system: self.packages.${system}.default);
       devShells = forAllSystems (
         system:
         let
