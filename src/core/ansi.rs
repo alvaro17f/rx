@@ -1,3 +1,4 @@
+#![expect(dead_code, reason = "unused in current palette")]
 use std::io::Write;
 
 // ANSI escape codes. Unused constants are kept for parity with the original
@@ -7,17 +8,12 @@ pub const RED: &str = "\x1b[31m";
 pub const GREEN: &str = "\x1b[32m";
 pub const YELLOW: &str = "\x1b[33m";
 pub const BLUE: &str = "\x1b[34m";
-#[expect(dead_code, reason = "unused in current palette, kept for parity with Zig original")]
 pub const MAGENTA: &str = "\x1b[35m";
 pub const CYAN: &str = "\x1b[36m";
-#[expect(dead_code, reason = "unused in current palette, kept for parity with Zig original")]
 pub const GRAY: &str = "\x1b[37m";
-#[expect(dead_code, reason = "unused in current palette, kept for parity with Zig original")]
 pub const BLACK: &str = "\x1b[30m";
 pub const RESET: &str = "\x1b[0m";
-#[expect(dead_code, reason = "unused in current palette, kept for parity with Zig original")]
 pub const BOLD: &str = "\x1b[1m";
-#[expect(dead_code, reason = "unused in current palette, kept for parity with Zig original")]
 pub const UNDERLINE: &str = "\x1b[4m";
 
 /// Write `msg` to `writer` and flush immediately.
@@ -92,3 +88,5 @@ mod tests {
         assert!(write_flush(&mut writer, "x").is_err());
     }
 }
+
+

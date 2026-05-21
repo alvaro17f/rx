@@ -74,7 +74,7 @@ pub fn cli<W: Write>(writer: &mut W, config: &Config, deps: &dyn Deps) -> Result
                     ansi::write_flush(writer, &format!("{}Changes added to git stage successfully{}\n", ansi::GREEN, ansi::RESET))?;
                 }
                 Err(e) => {
-                    ansi::write_flush(writer, &format!("Failed to add changes to the stage: {}\n", e))?;
+                    ansi::write_flush(writer, &format!("Failed to add changes to the stage: {e}\n"))?;
                 }
             }
         } else {

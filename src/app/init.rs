@@ -179,21 +179,16 @@ pub fn parse_args(args: &[String], writer: &mut dyn Write) -> Parsed {
                             config.repo = value;
                         } else if flag_char == 'n' {
                             config.hostname = value;
-                        } else {
-                            match value.parse::<u8>() {
-                                Ok(num) => config.keep = num,
-                                Err(_) => {
-                                    ansi::write_flush(
-                                        writer,
-                                        &format!(
-                                            "{}Error: Value of \"-k\" flag is not numeric.\n{}",
-                                            ansi::RED, ansi::RESET
-                                        ),
-                                    )
-                                    .ok();
-                                    return Parsed::Error;
-                                }
-                            }
+                        } else if let Ok(num) = value.parse::<u8>() { config.keep = num } else {
+                            ansi::write_flush(
+                                writer,
+                                &format!(
+                                    "{}Error: Value of \"-k\" flag is not numeric.\n{}",
+                                    ansi::RED, ansi::RESET
+                                ),
+                            )
+                            .ok();
+                            return Parsed::Error;
                         }
                         skip_next = true;
                         break;

@@ -10,7 +10,13 @@ pub fn print_title<W: Write>(writer: &mut W, text: &str) -> Result<(), Error> {
         writer,
         &format!(
             "{}\n{}\n* {}{}{} *\n{}\n{}",
-            ansi::BLUE, border, ansi::RED, text, ansi::BLUE, border, ansi::RESET
+            ansi::BLUE,
+            border,
+            ansi::RED,
+            text,
+            ansi::BLUE,
+            border,
+            ansi::RESET
         ),
     )?;
     Ok(())
@@ -28,7 +34,7 @@ pub fn confirm<R: BufRead, W: Write>(
     write_confirm_prompt(writer, default, msg)?;
     let mut line = String::new();
     reader.read_line(&mut line)?;
-    parse_confirm_response(line.trim(), default)
+    Ok(parse_confirm_response(line.trim(), default))
 }
 
 fn write_confirm_prompt<W: Write>(
@@ -42,9 +48,15 @@ fn write_confirm_prompt<W: Write>(
         format!("{}(y/N){}", ansi::RED, ansi::RESET)
     };
     if let Some(value) = msg {
-        ansi::write_flush(writer, &format!("\n{}{}{} {}: ", ansi::YELLOW, value, ansi::RESET, hint))?;
+        ansi::write_flush(
+            writer,
+            &format!("\n{}{}{} {}: ", ansi::YELLOW, value, ansi::RESET, hint),
+        )?;
     } else {
-        ansi::write_flush(writer, &format!("\n\n{}Proceed?{} {}: ", ansi::YELLOW, ansi::RESET, hint))?;
+        ansi::write_flush(
+            writer,
+            &format!("\n\n{}Proceed?{} {}: ", ansi::YELLOW, ansi::RESET, hint),
+        )?;
     }
     Ok(())
 }
@@ -53,12 +65,11 @@ fn write_confirm_prompt<W: Write>(
 ///
 /// Returns `default` for empty input, `true` for "y"/"yes", `false` for
 /// "n"/"no" or any other input.
-pub fn parse_confirm_response(line: &str, default: bool) -> Result<bool, Error> {
+pub fn parse_confirm_response(line: &str, default: bool) -> bool {
     match line.trim().to_lowercase().as_str() {
-        "y" | "yes" => Ok(true),
-        "n" | "no" => Ok(false),
-        "" => Ok(default),
-        _ => Ok(false),
+        "y" | "yes" => true,
+        "" => default,
+        _ => false,
     }
 }
 
