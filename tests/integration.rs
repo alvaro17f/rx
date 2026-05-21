@@ -9,7 +9,7 @@ fn help_flag_prints_rx_banner() {
     let output = Command::new(RX)
         .arg("-h")
         .output()
-        .expect("failed to run rx");
+        .expect("run rx");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("RX"));
 }
@@ -19,7 +19,7 @@ fn version_flag_prints_semver() {
     let output = Command::new(RX)
         .arg("-v")
         .output()
-        .expect("failed to run rx");
+        .expect("run rx");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("0.1.0"));
 }
@@ -29,7 +29,7 @@ fn unknown_flag_exits_nonzero() {
     let output = Command::new(RX)
         .arg("-x")
         .output()
-        .expect("failed to run rx");
+        .expect("run rx");
     assert!(!output.status.success());
 }
 
@@ -40,7 +40,7 @@ fn piped_stdin_decline_does_not_panic() {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .expect("failed to spawn rx");
+        .expect("spawn rx");
     if let Some(mut stdin) = child.stdin.take() {
         let _ = stdin.write_all(b"n\n");
         drop(stdin);
@@ -56,7 +56,7 @@ fn no_args_with_piped_stdin_runs_without_panic() {
         .stderr(Stdio::piped())
         .env("HOSTNAME", "testhost")
         .output()
-        .expect("failed to run rx");
+        .expect("run rx");
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn version_word_prints_version() {
     let output = Command::new(RX)
         .arg("version")
         .output()
-        .expect("failed to run rx");
+        .expect("run rx");
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("RX version"));
 }
@@ -74,7 +74,7 @@ fn help_word_prints_help_and_exits_zero() {
     let output = Command::new(RX)
         .arg("help")
         .output()
-        .expect("failed to run rx");
+        .expect("run rx");
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("RX"));
@@ -85,6 +85,6 @@ fn invalid_k_flag_exits_nonzero() {
     let output = Command::new(RX)
         .args(["-k", "abc"])
         .output()
-        .expect("failed to run rx");
+        .expect("run rx");
     assert!(!output.status.success());
 }

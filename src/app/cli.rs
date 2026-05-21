@@ -42,6 +42,69 @@ impl Deps for RealDeps {
     }
 }
 
+fn print_error(writer: &mut dyn Write, msg: &str) -> Result<(), Error> {
+    ansi::write_flush(writer, &format!("{}{}{}\n", ansi::RED, msg, ansi::RESET))?;
+    Ok(())
+}
+
+fn print_success(writer: &mut dyn Write, msg: &str) -> Result<(), Error> {
+    ansi::write_flush(writer, &format!("{}{}{}\n", ansi::GREEN, msg, ansi::RESET))?;
+    Ok(())
+}
+
+fn pull(writer: &mut dyn Write, repo: &str, deps: &dyn Deps) -> Result<(), Error> {
+    deps.print_title("Git Pull")?;
+    let status = deps.run_shell(&commands::git_pull(repo), true)?;
+    if status != 0 {
+        print_error(writer, "Failed to pull changes")?;
+        return Err(Error::GitPullFailed);
+    }
+    Ok(())
+}
+
+fn update(config: &Config, deps: &dyn Deps) -> Result<(), Error> {
+    deps.print_title("Nix Update")?;
+    deps.run_shell(&commands::nix_update(&config.repo), true)?;
+    Ok(())
+}
+
+fn stage(writer: &mut dyn Write, repo: &str, deps: &dyn Deps) -> Result<(), Error> {
+    let diff_status = deps.run_shell(&commands::git_diff(repo), false)?;
+    if diff_status != 1 {
+        return Ok(());
+    }
+    deps.print_title("Git Changes")?;
+    deps.run_shell(&commands::git_status(repo), true)?;
+    if !deps.confirm(true, Some("Do you want to add these changes to the stage?"))? {
+        print_error(writer, "Changes not added to stage")?;
+        return Ok(());
+    }
+    match deps.run_shell(&commands::git_add(repo), true) {
+        Ok(_) => print_success(writer, "Changes added to git stage successfully")?,
+        Err(e) => {
+            ansi::write_flush(writer, &format!("Failed to add changes to the stage: {e}\n"))?;
+        }
+    }
+    Ok(())
+}
+
+fn rebuild(config: &Config, deps: &dyn Deps) -> Result<(), Error> {
+    deps.print_title("Nixos Rebuild")?;
+    deps.run_shell(&commands::nix_rebuild(&config.repo, &config.hostname), true)?;
+    Ok(())
+}
+
+fn cleanup(config: &Config, deps: &dyn Deps) -> Result<(), Error> {
+    deps.run_shell(&commands::nix_keep(config.keep), true)?;
+    Ok(())
+}
+
+fn show_diff(deps: &dyn Deps) -> Result<(), Error> {
+    deps.print_title("Nix Diff")?;
+    deps.run_shell(commands::nix_diff(), true)?;
+    Ok(())
+}
+
 /// Main CLI workflow: print config, confirm, pull, update, diff, rebuild.
 pub fn cli(writer: &mut dyn Write, config: &Config, deps: &dyn Deps) -> Result<(), Error> {
     deps.print_title("RX Configuration")?;
@@ -51,61 +114,18 @@ pub fn cli(writer: &mut dyn Write, config: &Config, deps: &dyn Deps) -> Result<(
         return Ok(());
     }
 
-    deps.print_title("Git Pull")?;
-    let status = deps.run_shell(&commands::git_pull(&config.repo), true)?;
-    if status != 0 {
-        ansi::write_flush(
-            writer,
-            &format!("{}Failed to pull changes{}\n", ansi::RED, ansi::RESET),
-        )?;
-        return Err(Error::GitPullFailed);
-    }
+    pull(writer, &config.repo, deps)?;
 
     if config.update {
-        deps.print_title("Nix Update")?;
-        deps.run_shell(&commands::nix_update(&config.repo), true)?;
+        update(config, deps)?;
     }
 
-    let diff_status = deps.run_shell(&commands::git_diff(&config.repo), false)?;
-    if diff_status == 1 {
-        deps.print_title("Git Changes")?;
-        deps.run_shell(&commands::git_status(&config.repo), true)?;
-
-        if deps.confirm(true, Some("Do you want to add these changes to the stage?"))? {
-            match deps.run_shell(&commands::git_add(&config.repo), true) {
-                Ok(_) => {
-                    ansi::write_flush(
-                        writer,
-                        &format!(
-                            "{}Changes added to git stage successfully{}\n",
-                            ansi::GREEN,
-                            ansi::RESET
-                        ),
-                    )?;
-                }
-                Err(e) => {
-                    ansi::write_flush(
-                        writer,
-                        &format!("Failed to add changes to the stage: {e}\n"),
-                    )?;
-                }
-            }
-        } else {
-            ansi::write_flush(
-                writer,
-                &format!("{}Changes not added to stage{}\n", ansi::RED, ansi::RESET),
-            )?;
-        }
-    }
-
-    deps.print_title("Nixos Rebuild")?;
-    deps.run_shell(&commands::nix_rebuild(&config.repo, &config.hostname), true)?;
-
-    deps.run_shell(&commands::nix_keep(config.keep), true)?;
+    stage(writer, &config.repo, deps)?;
+    rebuild(config, deps)?;
+    cleanup(config, deps)?;
 
     if config.diff {
-        deps.print_title("Nix Diff")?;
-        deps.run_shell(commands::nix_diff(), true)?;
+        show_diff(deps)?;
     }
 
     Ok(())
@@ -115,15 +135,6 @@ pub fn cli(writer: &mut dyn Write, config: &Config, deps: &dyn Deps) -> Result<(
 mod tests {
     use super::*;
     use std::io;
-
-    #[cfg(coverage)]
-    macro_rules! assert {
-        ($e:expr $(, $($rest:tt)*)?) => { let _ = $e; };
-    }
-    #[cfg(coverage)]
-    macro_rules! assert_eq {
-        ($a:expr, $b:expr $(, $($rest:tt)*)?) => { let _ = ($a, $b); };
-    }
 
     type RunFn = Box<dyn Fn(&str, bool) -> Result<i32, Error>>;
     type ConfirmFn = Box<dyn Fn(bool, Option<&str>) -> Result<bool, Error>>;
@@ -182,7 +193,7 @@ mod tests {
             ..mock_deps_ok()
         };
         let mut buf = Vec::new();
-        cli(&mut buf, &default_config(), &deps).unwrap();
+        assert!(cli(&mut buf, &default_config(), &deps).is_ok());
     }
 
     #[test]
@@ -198,8 +209,8 @@ mod tests {
             ..mock_deps_ok()
         };
         let mut buf = Vec::new();
-        cli(&mut buf, &default_config(), &deps).unwrap();
-        let output = String::from_utf8(buf).unwrap();
+        assert!(cli(&mut buf, &default_config(), &deps).is_ok());
+        let output = String::from_utf8_lossy(&buf);
         assert!(output.contains("Changes not added to stage"));
     }
 
@@ -214,8 +225,7 @@ mod tests {
             ..mock_deps_ok()
         };
         let mut buf = Vec::new();
-        let result = cli(&mut buf, &default_config(), &deps);
-        let _ = result.unwrap_err();
+        assert!(cli(&mut buf, &default_config(), &deps).is_err());
     }
 
     // ------------------------------------------------------------------
@@ -228,7 +238,7 @@ mod tests {
         let mut config = default_config();
         config.update = true;
         config.diff = true;
-        cli(&mut buf, &config, &mock_deps_ok()).unwrap();
+        assert!(cli(&mut buf, &config, &mock_deps_ok()).is_ok());
     }
 
     // ------------------------------------------------------------------
@@ -242,7 +252,7 @@ mod tests {
             ..mock_deps_ok()
         };
         let mut buf = Vec::new();
-        cli(&mut buf, &default_config(), &deps).unwrap();
+        assert!(cli(&mut buf, &default_config(), &deps).is_ok());
     }
 
     #[test]
@@ -260,9 +270,28 @@ mod tests {
             ..mock_deps_ok()
         };
         let mut buf = Vec::new();
-        cli(&mut buf, &default_config(), &deps).unwrap();
-        let output = String::from_utf8(buf).unwrap();
+        assert!(cli(&mut buf, &default_config(), &deps).is_ok());
+        let output = String::from_utf8_lossy(&buf);
         assert!(output.contains("Failed to add changes to the stage"));
+    }
+
+    #[test]
+    fn cli_git_add_success_prints_success_message() {
+        let deps = MockDeps {
+            run_result: Box::new(|cmd, _| {
+                if cmd.contains("diff --exit-code") {
+                    Ok(1)
+                } else {
+                    Ok(0)
+                }
+            }),
+            confirm_result: Box::new(|_, _| Ok(true)),
+            ..mock_deps_ok()
+        };
+        let mut buf = Vec::new();
+        assert!(cli(&mut buf, &default_config(), &deps).is_ok());
+        let output = String::from_utf8_lossy(&buf);
+        assert!(output.contains("Changes added to git stage successfully"));
     }
 
     // ------------------------------------------------------------------
@@ -282,7 +311,7 @@ mod tests {
     #[test]
     fn failing_writer_flush_method_is_callable() {
         let mut writer = FailingWriter;
-        io::Write::flush(&mut writer).unwrap();
+        assert!(io::Write::flush(&mut writer).is_ok());
     }
 
     #[test]
@@ -292,8 +321,7 @@ mod tests {
             ..mock_deps_ok()
         };
         let mut writer = FailingWriter;
-        let result = cli(&mut writer, &default_config(), &deps);
-        let _ = result.unwrap_err();
+        assert!(cli(&mut writer, &default_config(), &deps).is_err());
     }
 
     #[test]
@@ -303,7 +331,7 @@ mod tests {
             ..mock_deps_ok()
         };
         let mut buf = Vec::new();
-        let _ = cli(&mut buf, &default_config(), &deps).unwrap_err();
+        assert!(cli(&mut buf, &default_config(), &deps).is_err());
     }
 
     #[test]
@@ -313,7 +341,7 @@ mod tests {
             ..mock_deps_ok()
         };
         let mut buf = Vec::new();
-        let _ = cli(&mut buf, &default_config(), &deps).unwrap_err();
+        assert!(cli(&mut buf, &default_config(), &deps).is_err());
     }
 
     #[test]
@@ -323,7 +351,7 @@ mod tests {
             ..mock_deps_ok()
         };
         let mut buf = Vec::new();
-        let _ = cli(&mut buf, &default_config(), &deps).unwrap_err();
+        assert!(cli(&mut buf, &default_config(), &deps).is_err());
     }
 
     #[test]
@@ -333,12 +361,11 @@ mod tests {
             ..mock_deps_ok()
         };
         let mut buf = Vec::new();
-        let _ = cli(&mut buf, &default_config(), &deps).unwrap_err();
+        assert!(cli(&mut buf, &default_config(), &deps).is_err());
     }
 
     #[test]
     fn cli_stage_decline_with_failing_writer() {
-        // diff_status=1, stage confirm=false → write_flush "Changes not added"
         let deps = MockDeps {
             run_result: Box::new(|cmd, _| {
                 if cmd.contains("diff --exit-code") {
@@ -351,13 +378,11 @@ mod tests {
             ..mock_deps_ok()
         };
         let mut writer = FailingWriter;
-        let result = cli(&mut writer, &default_config(), &deps);
-        let _ = result.unwrap_err();
+        assert!(cli(&mut writer, &default_config(), &deps).is_err());
     }
 
     #[test]
     fn cli_git_add_success_with_failing_writer() {
-        // diff_status=1, stage confirm=true, git_add Ok(0) → write_flush "Changes added"
         let deps = MockDeps {
             run_result: Box::new(|cmd, _| {
                 if cmd.contains("diff --exit-code") {
@@ -370,13 +395,11 @@ mod tests {
             ..mock_deps_ok()
         };
         let mut writer = FailingWriter;
-        let result = cli(&mut writer, &default_config(), &deps);
-        let _ = result.unwrap_err();
+        assert!(cli(&mut writer, &default_config(), &deps).is_err());
     }
 
     #[test]
     fn cli_git_add_failure_with_failing_writer() {
-        // diff_status=1, stage confirm=true, git_add Err → write_flush "Failed to add"
         let deps = MockDeps {
             run_result: Box::new(|cmd, _| {
                 if cmd.contains("add .") {
@@ -391,8 +414,7 @@ mod tests {
             ..mock_deps_ok()
         };
         let mut writer = FailingWriter;
-        let result = cli(&mut writer, &default_config(), &deps);
-        let _ = result.unwrap_err();
+        assert!(cli(&mut writer, &default_config(), &deps).is_err());
     }
 
     // ------------------------------------------------------------------
@@ -402,13 +424,13 @@ mod tests {
     #[test]
     fn real_deps_run_shell_true_returns_zero() {
         let deps = RealDeps;
-        assert_eq!(deps.run_shell("true", false).unwrap(), 0);
+        assert_eq!(deps.run_shell("true", false).expect("run true"), 0);
     }
 
     #[test]
     fn real_deps_print_title_does_not_panic() {
         let deps = RealDeps;
-        deps.print_title("Test").unwrap();
+        deps.print_title("Test").expect("print title");
     }
 
     #[test]
@@ -421,7 +443,7 @@ mod tests {
             update: false,
             diff: false,
         };
-        deps.config_print(&config).unwrap();
+        deps.config_print(&config).expect("config print");
     }
 
     // ------------------------------------------------------------------
@@ -459,23 +481,23 @@ mod tests {
     #[test]
     fn cli_print_title_git_pull_error_propagates() {
         let mut buf = Vec::new();
-        let _ = cli(
+        assert!(cli(
             &mut buf,
             &default_config(),
             &deps_print_title_fails_on("Git Pull"),
         )
-        .unwrap_err();
+        .is_err());
     }
 
     #[test]
     fn cli_run_shell_git_pull_error_propagates() {
         let mut buf = Vec::new();
-        let _ = cli(
+        assert!(cli(
             &mut buf,
             &default_config(),
             &deps_run_shell_fails_on("git -C r pull"),
         )
-        .unwrap_err();
+        .is_err());
     }
 
     #[test]
@@ -483,12 +505,12 @@ mod tests {
         let mut mut_config = default_config();
         mut_config.update = true;
         let mut buf = Vec::new();
-        let _ = cli(
+        assert!(cli(
             &mut buf,
             &mut_config,
             &deps_print_title_fails_on("Nix Update"),
         )
-        .unwrap_err();
+        .is_err());
     }
 
     #[test]
@@ -496,23 +518,23 @@ mod tests {
         let mut mut_config = default_config();
         mut_config.update = true;
         let mut buf = Vec::new();
-        let _ = cli(
+        assert!(cli(
             &mut buf,
             &mut_config,
             &deps_run_shell_fails_on("nix flake update"),
         )
-        .unwrap_err();
+        .is_err());
     }
 
     #[test]
     fn cli_run_shell_git_diff_error_propagates() {
         let mut buf = Vec::new();
-        let _ = cli(
+        assert!(cli(
             &mut buf,
             &default_config(),
             &deps_run_shell_fails_on("git -C r diff --exit-code"),
         )
-        .unwrap_err();
+        .is_err());
     }
 
     #[test]
@@ -535,7 +557,7 @@ mod tests {
             ..mock_deps_ok()
         };
         let mut buf = Vec::new();
-        let _ = cli(&mut buf, &default_config(), &deps).unwrap_err();
+        assert!(cli(&mut buf, &default_config(), &deps).is_err());
     }
 
     #[test]
@@ -553,7 +575,7 @@ mod tests {
             ..mock_deps_ok()
         };
         let mut buf = Vec::new();
-        let _ = cli(&mut buf, &default_config(), &deps).unwrap_err();
+        assert!(cli(&mut buf, &default_config(), &deps).is_err());
     }
 
     #[test]
@@ -576,40 +598,40 @@ mod tests {
             ..mock_deps_ok()
         };
         let mut buf = Vec::new();
-        let _ = cli(&mut buf, &default_config(), &deps).unwrap_err();
+        assert!(cli(&mut buf, &default_config(), &deps).is_err());
     }
 
     #[test]
     fn cli_print_title_nixos_rebuild_error_propagates() {
         let mut buf = Vec::new();
-        let _ = cli(
+        assert!(cli(
             &mut buf,
             &default_config(),
             &deps_print_title_fails_on("Nixos Rebuild"),
         )
-        .unwrap_err();
+        .is_err());
     }
 
     #[test]
     fn cli_run_shell_nix_rebuild_error_propagates() {
         let mut buf = Vec::new();
-        let _ = cli(
+        assert!(cli(
             &mut buf,
             &default_config(),
             &deps_run_shell_fails_on("nixos-rebuild switch"),
         )
-        .unwrap_err();
+        .is_err());
     }
 
     #[test]
     fn cli_run_shell_nix_keep_error_propagates() {
         let mut buf = Vec::new();
-        let _ = cli(
+        assert!(cli(
             &mut buf,
             &default_config(),
             &deps_run_shell_fails_on("nix-env --profile"),
         )
-        .unwrap_err();
+        .is_err());
     }
 
     #[test]
@@ -617,12 +639,12 @@ mod tests {
         let mut mut_config = default_config();
         mut_config.diff = true;
         let mut buf = Vec::new();
-        let _ = cli(
+        assert!(cli(
             &mut buf,
             &mut_config,
             &deps_print_title_fails_on("Nix Diff"),
         )
-        .unwrap_err();
+        .is_err());
     }
 
     #[test]
@@ -630,11 +652,11 @@ mod tests {
         let mut mut_config = default_config();
         mut_config.diff = true;
         let mut buf = Vec::new();
-        let _ = cli(
+        assert!(cli(
             &mut buf,
             &mut_config,
             &deps_run_shell_fails_on("nix profile diff-closures"),
         )
-        .unwrap_err();
+        .is_err());
     }
 }

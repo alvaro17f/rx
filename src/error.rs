@@ -8,6 +8,7 @@ use std::fmt;
 pub enum Error {
     Io(std::io::Error),
     GitPullFailed,
+    InvalidArgs,
 }
 
 impl fmt::Display for Error {
@@ -15,6 +16,7 @@ impl fmt::Display for Error {
         match self {
             Error::Io(e) => write!(f, "IO error: {e}"),
             Error::GitPullFailed => write!(f, "Failed to pull changes"),
+            Error::InvalidArgs => write!(f, "Invalid arguments"),
         }
     }
 }
@@ -23,7 +25,7 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Error::Io(e) => Some(e),
-            Error::GitPullFailed => None,
+            Error::GitPullFailed | Error::InvalidArgs => None,
         }
     }
 }
@@ -58,6 +60,16 @@ mod tests {
     #[test]
     fn source_git_pull_failed_yields_none() {
         assert!(std::error::Error::source(&Error::GitPullFailed).is_none());
+    }
+
+    #[test]
+    fn display_invalid_args_matches_literal() {
+        assert_eq!(Error::InvalidArgs.to_string(), "Invalid arguments");
+    }
+
+    #[test]
+    fn source_invalid_args_yields_none() {
+        assert!(std::error::Error::source(&Error::InvalidArgs).is_none());
     }
 
     #[test]

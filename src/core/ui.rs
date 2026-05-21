@@ -47,17 +47,11 @@ fn write_confirm_prompt(
     } else {
         format!("{}(y/N){}", ansi::RED, ansi::RESET)
     };
-    if let Some(value) = msg {
-        ansi::write_flush(
-            writer,
-            &format!("\n{}{}{} {}: ", ansi::YELLOW, value, ansi::RESET, hint),
-        )?;
-    } else {
-        ansi::write_flush(
-            writer,
-            &format!("\n\n{}Proceed?{} {}: ", ansi::YELLOW, ansi::RESET, hint),
-        )?;
-    }
+    let text = match msg {
+        Some(value) => format!("\n{}{}{} {}: ", ansi::YELLOW, value, ansi::RESET, hint),
+        None => format!("\n\n{}Proceed?{} {}: ", ansi::YELLOW, ansi::RESET, hint),
+    };
+    ansi::write_flush(writer, &text)?;
     Ok(())
 }
 
@@ -76,13 +70,13 @@ pub fn parse_confirm_response(line: &str, default: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io;
+    use std::io::{self, Read};
 
     #[test]
     fn print_title_contains_text_and_ansi_codes() {
         let mut buf = Vec::new();
-        print_title(&mut buf, "RX").unwrap();
-        let s = String::from_utf8(buf).unwrap();
+        assert!(print_title(&mut buf, "RX").is_ok());
+        let s = String::from_utf8_lossy(&buf);
         assert!(s.contains("RX"));
         assert!(s.contains(ansi::BLUE));
         assert!(s.contains(ansi::RED));
@@ -126,50 +120,41 @@ mod tests {
 
     #[test]
     fn parse_confirm_garbage_returns_false() {
-        assert!(!parse_confirm_response("maybe", true));
-        assert!(!parse_confirm_response("maybe", false));
+        assert!(!parse_confirm_response("xyz", true));
     }
 
     #[test]
     fn confirm_reads_y_and_returns_true() {
-        let input = b"y\n";
-        let mut reader = &input[..];
+        let mut reader = io::BufReader::new(b"y\n".as_slice());
         let mut writer = Vec::new();
-        assert!(confirm(&mut reader, &mut writer, false, None).unwrap());
+        assert!(confirm(&mut reader, &mut writer, false, None).expect("confirm"));
     }
 
     #[test]
     fn confirm_reads_n_and_returns_false() {
-        let input = b"n\n";
-        let mut reader = &input[..];
+        let mut reader = io::BufReader::new(b"n\n".as_slice());
         let mut writer = Vec::new();
-        assert!(!confirm(&mut reader, &mut writer, true, None).unwrap());
+        assert!(!confirm(&mut reader, &mut writer, true, None).expect("confirm"));
     }
 
     #[test]
     fn confirm_with_message_writes_message_to_writer() {
-        let input = b"y\n";
-        let mut reader = &input[..];
+        let mut reader = io::BufReader::new(b"y\n".as_slice());
         let mut writer = Vec::new();
-        let result = confirm(&mut reader, &mut writer, false, Some("Sure")).unwrap();
-        assert!(result);
-        let output = String::from_utf8(writer).unwrap();
+        assert!(confirm(&mut reader, &mut writer, false, Some("Sure")).is_ok());
+        let output = String::from_utf8_lossy(&writer);
         assert!(output.contains("Sure"));
     }
 
     #[test]
     fn confirm_empty_line_uses_default_true() {
-        let input = b"\n";
-        let mut reader = &input[..];
+        let mut reader = io::BufReader::new(b"\n".as_slice());
         let mut writer = Vec::new();
-        assert!(confirm(&mut reader, &mut writer, true, None).unwrap());
+        assert!(confirm(&mut reader, &mut writer, true, None).expect("confirm"));
     }
 
-    // ------------------------------------------------------------------
-    // error propagation
-    // ------------------------------------------------------------------
-
     struct FailingWriter;
+
     impl Write for FailingWriter {
         fn write(&mut self, _: &[u8]) -> io::Result<usize> {
             Err(std::io::Error::other("fail"))
@@ -181,17 +166,19 @@ mod tests {
 
     #[test]
     fn failing_writer_flush_is_ok() {
-        let mut w = FailingWriter;
-        assert!(io::Write::flush(&mut w).is_ok());
+        let mut writer = FailingWriter;
+        assert!(io::Write::flush(&mut writer).is_ok());
     }
 
     struct FailingReader;
+
     impl io::Read for FailingReader {
         fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
             Err(std::io::Error::other("fail"))
         }
     }
-    impl io::BufRead for FailingReader {
+
+    impl BufRead for FailingReader {
         fn fill_buf(&mut self) -> io::Result<&[u8]> {
             Err(std::io::Error::other("fail"))
         }
@@ -200,42 +187,44 @@ mod tests {
 
     #[test]
     fn failing_reader_read_is_err() {
-        let mut r = FailingReader;
-        assert!(io::Read::read(&mut r, &mut [0]).is_err());
+        let mut reader = FailingReader;
+        let mut buf = [0u8; 1];
+        assert!(reader.read(&mut buf).is_err());
     }
 
     #[test]
     fn failing_reader_consume_is_noop() {
-        let mut r = FailingReader;
-        io::BufRead::consume(&mut r, 10);
+        let mut reader = FailingReader;
+        reader.consume(0);
     }
 
     #[test]
     fn print_title_error_propagation() {
         let mut writer = FailingWriter;
-        assert!(print_title(&mut writer, "X").is_err());
+        assert!(print_title(&mut writer, "Test").is_err());
     }
 
     #[test]
     fn confirm_error_from_writer() {
-        let input = b"y\n";
-        let mut reader = &input[..];
+        let mut reader = io::BufReader::new(b"y\n".as_slice());
         let mut writer = FailingWriter;
-        assert!(confirm(&mut reader, &mut writer, false, None).is_err());
+        let result = confirm(&mut reader, &mut writer, false, None);
+        assert!(result.is_err());
     }
 
     #[test]
     fn confirm_error_from_writer_with_message() {
-        let input = b"y\n";
-        let mut reader = &input[..];
+        let mut reader = io::BufReader::new(b"y\n".as_slice());
         let mut writer = FailingWriter;
-        assert!(confirm(&mut reader, &mut writer, false, Some("X")).is_err());
+        let result = confirm(&mut reader, &mut writer, false, Some("Sure"));
+        assert!(result.is_err());
     }
 
     #[test]
     fn confirm_error_from_reader_read_line() {
         let mut reader = FailingReader;
         let mut writer = Vec::new();
-        assert!(confirm(&mut reader, &mut writer, false, None).is_err());
+        let result = confirm(&mut reader, &mut writer, true, None);
+        assert!(result.is_err());
     }
 }

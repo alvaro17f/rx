@@ -62,7 +62,7 @@ mod tests {
     #[test]
     fn write_flush_writes_exact_bytes() {
         let mut buf = Vec::new();
-        write_flush(&mut buf, "hello").unwrap();
+        assert!(write_flush(&mut buf, "hello").is_ok());
         assert_eq!(buf, b"hello");
     }
 

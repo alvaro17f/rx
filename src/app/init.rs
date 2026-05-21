@@ -133,6 +133,13 @@ pub enum Parsed {
     Error,
 }
 
+fn write_parse_error(writer: &mut dyn Write, msg: &str) {
+    let _ = ansi::write_flush(
+        writer,
+        &format!("{}Error: {}{}\n", ansi::RED, msg, ansi::RESET),
+    );
+}
+
 /// Parse `args` (including the program name at index 0).
 ///
 /// Prints error messages directly to `writer` for invalid flags/arguments.
@@ -150,17 +157,7 @@ pub fn parse_args(args: &[String], writer: &mut dyn Write) -> Parsed {
     }
 
     if !args[1].starts_with('-') {
-        let arg = &args[1];
-        ansi::write_flush(
-            writer,
-            &format!(
-                "{}Error: Unknown argument \"{}\"\n{}",
-                ansi::RED,
-                arg,
-                ansi::RESET
-            ),
-        )
-        .ok();
+        write_parse_error(writer, &format!("Unknown argument \"{}\"", &args[1]));
         return Parsed::Error;
     }
 
@@ -179,16 +176,7 @@ pub fn parse_args(args: &[String], writer: &mut dyn Write) -> Parsed {
                     'u' => config.update = true,
                     'r' | 'n' | 'k' => {
                         if i + 1 >= args.len() {
-                            ansi::write_flush(
-                                writer,
-                                &format!(
-                                    "{}Error: \"-{}\" flag requires an argument\n{}",
-                                    ansi::RED,
-                                    flag_char,
-                                    ansi::RESET
-                                ),
-                            )
-                            .ok();
+                            write_parse_error(writer, &format!("\"-{flag_char}\" flag requires an argument"));
                             return Parsed::Error;
                         }
                         let value = args[i + 1].clone();
@@ -199,31 +187,14 @@ pub fn parse_args(args: &[String], writer: &mut dyn Write) -> Parsed {
                         } else if let Ok(num) = value.parse::<u8>() {
                             config.keep = num;
                         } else {
-                            ansi::write_flush(
-                                writer,
-                                &format!(
-                                    "{}Error: Value of \"-k\" flag is not numeric.\n{}",
-                                    ansi::RED,
-                                    ansi::RESET
-                                ),
-                            )
-                            .ok();
+                            write_parse_error(writer, "Value of \"-k\" flag is not numeric.");
                             return Parsed::Error;
                         }
                         skip_next = true;
                         break;
                     }
                     _ => {
-                        ansi::write_flush(
-                            writer,
-                            &format!(
-                                "{}Error: Unknown flag \"-{}\"\n{}",
-                                ansi::RED,
-                                flag_char,
-                                ansi::RESET
-                            ),
-                        )
-                        .ok();
+                        write_parse_error(writer, &format!("Unknown flag \"-{flag_char}\""));
                         return Parsed::Error;
                     }
                 }
@@ -239,15 +210,15 @@ pub fn parse_args(args: &[String], writer: &mut dyn Write) -> Parsed {
 }
 
 /// Dispatch parsed arguments to help, version, CLI workflow, or error.
-pub fn run<W: Write>(
+pub fn run(
     args: &[String],
-    writer: &mut W,
+    writer: &mut dyn Write,
     deps: &dyn crate::app::cli::Deps,
 ) -> Result<(), Error> {
     match parse_args(args, writer) {
         Parsed::Help => print_help(writer),
         Parsed::Version => print_version(writer),
-        Parsed::Error => Err(Error::GitPullFailed),
+        Parsed::Error => Err(Error::InvalidArgs),
         Parsed::Run(config) => crate::app::cli::cli(writer, &config, deps),
     }
 }
@@ -269,16 +240,16 @@ mod tests {
     #[test]
     fn print_help_contains_rx() {
         let mut buf = Vec::new();
-        print_help(&mut buf).unwrap();
-        let s = String::from_utf8(buf).unwrap();
+        assert!(print_help(&mut buf).is_ok());
+        let s = String::from_utf8_lossy(&buf);
         assert!(s.contains("RX"));
     }
 
     #[test]
     fn print_version_contains_semver() {
         let mut buf = Vec::new();
-        print_version(&mut buf).unwrap();
-        let s = String::from_utf8(buf).unwrap();
+        assert!(print_version(&mut buf).is_ok());
+        let s = String::from_utf8_lossy(&buf);
         assert!(s.contains(VERSION));
     }
 
@@ -296,8 +267,8 @@ mod tests {
             update: false,
             diff: true,
         };
-        config_print(&mut buf, &config).unwrap();
-        let s = String::from_utf8(buf).unwrap();
+        assert!(config_print(&mut buf, &config).is_ok());
+        let s = String::from_utf8_lossy(&buf);
         assert!(s.contains("repo"));
         assert!(s.contains("hostname"));
         assert!(s.contains("keep"));
@@ -315,8 +286,8 @@ mod tests {
             update: true,
             diff: false,
         };
-        config_print(&mut buf, &config).unwrap();
-        let s = String::from_utf8(buf).unwrap();
+        assert!(config_print(&mut buf, &config).is_ok());
+        let s = String::from_utf8_lossy(&buf);
         assert!(!s.ends_with('\n'));
     }
 
@@ -367,7 +338,7 @@ mod tests {
             parse_args(&args(&["rx", "unknown"]), &mut buf),
             Parsed::Error
         );
-        assert!(String::from_utf8(buf).unwrap().contains("Unknown argument"));
+        assert!(String::from_utf8_lossy(&buf).contains("Unknown argument"));
     }
 
     // ------------------------------------------------------------------
@@ -378,22 +349,14 @@ mod tests {
     fn parse_r_missing_value_returns_error() {
         let mut buf = Vec::new();
         assert_eq!(parse_args(&args(&["rx", "-r"]), &mut buf), Parsed::Error);
-        assert!(
-            String::from_utf8(buf)
-                .unwrap()
-                .contains("requires an argument")
-        );
+        assert!(String::from_utf8_lossy(&buf).contains("requires an argument"));
     }
 
     #[test]
     fn parse_n_missing_value_returns_error() {
         let mut buf = Vec::new();
         assert_eq!(parse_args(&args(&["rx", "-n"]), &mut buf), Parsed::Error);
-        assert!(
-            String::from_utf8(buf)
-                .unwrap()
-                .contains("requires an argument")
-        );
+        assert!(String::from_utf8_lossy(&buf).contains("requires an argument"));
     }
 
     #[test]
@@ -403,7 +366,7 @@ mod tests {
             parse_args(&args(&["rx", "-k", "abc"]), &mut buf),
             Parsed::Error
         );
-        assert!(String::from_utf8(buf).unwrap().contains("not numeric"));
+        assert!(String::from_utf8_lossy(&buf).contains("not numeric"));
     }
 
     #[test]
@@ -510,7 +473,7 @@ mod tests {
     fn parse_unknown_flag_returns_error() {
         let mut buf = Vec::new();
         assert_eq!(parse_args(&args(&["rx", "-x"]), &mut buf), Parsed::Error);
-        assert!(String::from_utf8(buf).unwrap().contains("Unknown flag"));
+        assert!(String::from_utf8_lossy(&buf).contains("Unknown flag"));
     }
 
     #[test]
@@ -531,32 +494,34 @@ mod tests {
     #[test]
     fn run_help_flag_routes_to_help() {
         let mut buf = Vec::new();
-        run(&args(&["rx", "-h"]), &mut buf, &MockCliDeps).unwrap();
-        assert!(String::from_utf8(buf).unwrap().contains("RX"));
+        run(&args(&["rx", "-h"]), &mut buf, &MockCliDeps).expect("run help");
+        assert!(String::from_utf8_lossy(&buf).contains("RX"));
     }
 
     #[test]
     fn run_version_flag_routes_to_version() {
         let mut buf = Vec::new();
-        run(&args(&["rx", "-v"]), &mut buf, &MockCliDeps).unwrap();
+        run(&args(&["rx", "-v"]), &mut buf, &MockCliDeps).expect("run version");
     }
 
     #[test]
     fn run_unknown_flag_returns_error() {
         let mut buf = Vec::new();
-        assert!(run(&args(&["rx", "-x"]), &mut buf, &MockCliDeps).is_err());
+        let result = run(&args(&["rx", "-x"]), &mut buf, &MockCliDeps);
+        assert!(result.is_err());
+        assert!(result.expect_err("invalid args").to_string().contains("Invalid arguments"));
     }
 
     #[test]
     fn run_no_args_reaches_cli() {
         let mut buf = Vec::new();
-        run(&args(&["rx"]), &mut buf, &MockCliDeps).unwrap();
+        run(&args(&["rx"]), &mut buf, &MockCliDeps).expect("run no args");
     }
 
     #[test]
     fn run_with_d_and_u_reaches_cli() {
         let mut buf = Vec::new();
-        run(&args(&["rx", "-d", "-u"]), &mut buf, &MockCliDeps).unwrap();
+        run(&args(&["rx", "-d", "-u"]), &mut buf, &MockCliDeps).expect("run flags");
     }
 
     // ------------------------------------------------------------------
