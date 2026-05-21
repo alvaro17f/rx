@@ -88,5 +88,3 @@ mod tests {
         assert!(write_flush(&mut writer, "x").is_err());
     }
 }
-
-

@@ -143,7 +143,12 @@ pub fn parse_args(args: &[String], writer: &mut dyn Write) -> Parsed {
         let arg = &args[1];
         ansi::write_flush(
             writer,
-            &format!("{}Error: Unknown argument \"{}\"\n{}", ansi::RED, arg, ansi::RESET),
+            &format!(
+                "{}Error: Unknown argument \"{}\"\n{}",
+                ansi::RED,
+                arg,
+                ansi::RESET
+            ),
         )
         .ok();
         return Parsed::Error;
@@ -168,7 +173,9 @@ pub fn parse_args(args: &[String], writer: &mut dyn Write) -> Parsed {
                                 writer,
                                 &format!(
                                     "{}Error: \"-{}\" flag requires an argument\n{}",
-                                    ansi::RED, flag_char, ansi::RESET
+                                    ansi::RED,
+                                    flag_char,
+                                    ansi::RESET
                                 ),
                             )
                             .ok();
@@ -179,12 +186,15 @@ pub fn parse_args(args: &[String], writer: &mut dyn Write) -> Parsed {
                             config.repo = value;
                         } else if flag_char == 'n' {
                             config.hostname = value;
-                        } else if let Ok(num) = value.parse::<u8>() { config.keep = num } else {
+                        } else if let Ok(num) = value.parse::<u8>() {
+                            config.keep = num
+                        } else {
                             ansi::write_flush(
                                 writer,
                                 &format!(
                                     "{}Error: Value of \"-k\" flag is not numeric.\n{}",
-                                    ansi::RED, ansi::RESET
+                                    ansi::RED,
+                                    ansi::RESET
                                 ),
                             )
                             .ok();
@@ -198,7 +208,9 @@ pub fn parse_args(args: &[String], writer: &mut dyn Write) -> Parsed {
                             writer,
                             &format!(
                                 "{}Error: Unknown flag \"-{}\"\n{}",
-                                ansi::RED, flag_char, ansi::RESET
+                                ansi::RED,
+                                flag_char,
+                                ansi::RESET
                             ),
                         )
                         .ok();
@@ -319,31 +331,46 @@ mod tests {
     #[test]
     fn parse_help_flag_returns_help() {
         let mut buf = Vec::new();
-        assert!(matches!(parse_args(&args(&["rx", "-h"]), &mut buf), Parsed::Help));
+        assert!(matches!(
+            parse_args(&args(&["rx", "-h"]), &mut buf),
+            Parsed::Help
+        ));
     }
 
     #[test]
     fn parse_help_word_returns_help() {
         let mut buf = Vec::new();
-        assert!(matches!(parse_args(&args(&["rx", "help"]), &mut buf), Parsed::Help));
+        assert!(matches!(
+            parse_args(&args(&["rx", "help"]), &mut buf),
+            Parsed::Help
+        ));
     }
 
     #[test]
     fn parse_version_flag_returns_version() {
         let mut buf = Vec::new();
-        assert!(matches!(parse_args(&args(&["rx", "-v"]), &mut buf), Parsed::Version));
+        assert!(matches!(
+            parse_args(&args(&["rx", "-v"]), &mut buf),
+            Parsed::Version
+        ));
     }
 
     #[test]
     fn parse_version_word_returns_version() {
         let mut buf = Vec::new();
-        assert!(matches!(parse_args(&args(&["rx", "version"]), &mut buf), Parsed::Version));
+        assert!(matches!(
+            parse_args(&args(&["rx", "version"]), &mut buf),
+            Parsed::Version
+        ));
     }
 
     #[test]
     fn parse_unknown_argument_returns_error() {
         let mut buf = Vec::new();
-        assert!(matches!(parse_args(&args(&["rx", "unknown"]), &mut buf), Parsed::Error));
+        assert!(matches!(
+            parse_args(&args(&["rx", "unknown"]), &mut buf),
+            Parsed::Error
+        ));
         assert!(String::from_utf8(buf).unwrap().contains("Unknown argument"));
     }
 
@@ -354,21 +381,38 @@ mod tests {
     #[test]
     fn parse_r_missing_value_returns_error() {
         let mut buf = Vec::new();
-        assert!(matches!(parse_args(&args(&["rx", "-r"]), &mut buf), Parsed::Error));
-        assert!(String::from_utf8(buf).unwrap().contains("requires an argument"));
+        assert!(matches!(
+            parse_args(&args(&["rx", "-r"]), &mut buf),
+            Parsed::Error
+        ));
+        assert!(
+            String::from_utf8(buf)
+                .unwrap()
+                .contains("requires an argument")
+        );
     }
 
     #[test]
     fn parse_n_missing_value_returns_error() {
         let mut buf = Vec::new();
-        assert!(matches!(parse_args(&args(&["rx", "-n"]), &mut buf), Parsed::Error));
-        assert!(String::from_utf8(buf).unwrap().contains("requires an argument"));
+        assert!(matches!(
+            parse_args(&args(&["rx", "-n"]), &mut buf),
+            Parsed::Error
+        ));
+        assert!(
+            String::from_utf8(buf)
+                .unwrap()
+                .contains("requires an argument")
+        );
     }
 
     #[test]
     fn parse_k_non_numeric_returns_error() {
         let mut buf = Vec::new();
-        assert!(matches!(parse_args(&args(&["rx", "-k", "abc"]), &mut buf), Parsed::Error));
+        assert!(matches!(
+            parse_args(&args(&["rx", "-k", "abc"]), &mut buf),
+            Parsed::Error
+        ));
         assert!(String::from_utf8(buf).unwrap().contains("not numeric"));
     }
 
@@ -437,7 +481,9 @@ mod tests {
     fn parse_combined_flags_and_values() {
         let mut buf = Vec::new();
         match parse_args(
-            &args(&["rx", "-d", "-u", "-r", "/my/repo", "-n", "myhost", "-k", "3"]),
+            &args(&[
+                "rx", "-d", "-u", "-r", "/my/repo", "-n", "myhost", "-k", "3",
+            ]),
             &mut buf,
         ) {
             Parsed::Run(c) => {
@@ -463,7 +509,10 @@ mod tests {
     #[test]
     fn parse_unknown_flag_returns_error() {
         let mut buf = Vec::new();
-        assert!(matches!(parse_args(&args(&["rx", "-x"]), &mut buf), Parsed::Error));
+        assert!(matches!(
+            parse_args(&args(&["rx", "-x"]), &mut buf),
+            Parsed::Error
+        ));
         assert!(String::from_utf8(buf).unwrap().contains("Unknown flag"));
     }
 
@@ -533,28 +582,19 @@ mod tests {
 
     #[test]
     fn default_hostname_from_proc_succeeds() {
-        let result = default_hostname_from(
-            || Some(String::from("myhost\n")),
-            || None,
-        );
+        let result = default_hostname_from(|| Some(String::from("myhost\n")), || None);
         assert_eq!(result, "myhost");
     }
 
     #[test]
     fn default_hostname_from_falls_back_to_env() {
-        let result = default_hostname_from(
-            || None,
-            || Some(String::from("envhost")),
-        );
+        let result = default_hostname_from(|| None, || Some(String::from("envhost")));
         assert_eq!(result, "envhost");
     }
 
     #[test]
     fn default_hostname_from_falls_back_to_unknown() {
-        let result = default_hostname_from(
-            || None,
-            || None,
-        );
+        let result = default_hostname_from(|| None, || None);
         assert_eq!(result, "unknown");
     }
 
@@ -605,7 +645,10 @@ mod tests {
 
     #[test]
     fn config_print_error_propagation_line_1() {
-        let mut writer = CountingWriter { fail_after: 1, count: 0 };
+        let mut writer = CountingWriter {
+            fail_after: 1,
+            count: 0,
+        };
         let config = Config {
             repo: String::from("r"),
             hostname: String::from("h"),
@@ -618,7 +661,10 @@ mod tests {
 
     #[test]
     fn config_print_error_propagation_line_2() {
-        let mut writer = CountingWriter { fail_after: 2, count: 0 };
+        let mut writer = CountingWriter {
+            fail_after: 2,
+            count: 0,
+        };
         let config = Config {
             repo: String::from("r"),
             hostname: String::from("h"),
@@ -631,7 +677,10 @@ mod tests {
 
     #[test]
     fn config_print_error_propagation_line_3() {
-        let mut writer = CountingWriter { fail_after: 3, count: 0 };
+        let mut writer = CountingWriter {
+            fail_after: 3,
+            count: 0,
+        };
         let config = Config {
             repo: String::from("r"),
             hostname: String::from("h"),
@@ -644,7 +693,10 @@ mod tests {
 
     #[test]
     fn config_print_error_propagation_line_4() {
-        let mut writer = CountingWriter { fail_after: 4, count: 0 };
+        let mut writer = CountingWriter {
+            fail_after: 4,
+            count: 0,
+        };
         let config = Config {
             repo: String::from("r"),
             hostname: String::from("h"),
@@ -657,7 +709,10 @@ mod tests {
 
     #[test]
     fn config_print_error_propagation_line_5() {
-        let mut writer = CountingWriter { fail_after: 5, count: 0 };
+        let mut writer = CountingWriter {
+            fail_after: 5,
+            count: 0,
+        };
         let config = Config {
             repo: String::from("r"),
             hostname: String::from("h"),
@@ -681,9 +736,17 @@ mod tests {
     struct MockCliDeps;
 
     impl Deps for MockCliDeps {
-        fn run_shell(&self, _: &str, _: bool) -> Result<i32, Error> { Ok(0) }
-        fn confirm(&self, _: bool, _: Option<&str>) -> Result<bool, Error> { Ok(true) }
-        fn print_title(&self, _: &str) -> Result<(), Error> { Ok(()) }
-        fn config_print(&self, _: &Config) -> Result<(), Error> { Ok(()) }
+        fn run_shell(&self, _: &str, _: bool) -> Result<i32, Error> {
+            Ok(0)
+        }
+        fn confirm(&self, _: bool, _: Option<&str>) -> Result<bool, Error> {
+            Ok(true)
+        }
+        fn print_title(&self, _: &str) -> Result<(), Error> {
+            Ok(())
+        }
+        fn config_print(&self, _: &Config) -> Result<(), Error> {
+            Ok(())
+        }
     }
 }

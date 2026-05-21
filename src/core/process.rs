@@ -11,8 +11,16 @@ pub fn run(cmd: &str, output: bool) -> Result<i32, Error> {
 }
 
 fn run_shell(shell: &str, cmd: &str, output: bool) -> Result<i32, Error> {
-    let stdout = if output { Stdio::inherit() } else { Stdio::null() };
-    let stderr = if output { Stdio::inherit() } else { Stdio::null() };
+    let stdout = if output {
+        Stdio::inherit()
+    } else {
+        Stdio::null()
+    };
+    let stderr = if output {
+        Stdio::inherit()
+    } else {
+        Stdio::null()
+    };
     let status = Command::new(shell)
         .arg("-c")
         .arg(cmd)

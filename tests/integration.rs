@@ -1,5 +1,5 @@
-use std::process::{Command, Stdio};
 use std::io::Write;
+use std::process::{Command, Stdio};
 
 /// Path to the compiled `rx` binary, provided by Cargo for integration tests.
 const RX: &str = env!("CARGO_BIN_EXE_rx");
@@ -20,7 +20,7 @@ fn version_flag_prints_semver() {
         .arg("-v")
         .output()
         .expect("failed to run rx");
-        let stdout = String::from_utf8_lossy(&output.stdout);
+    let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("0.1.0"));
 }
 

@@ -54,7 +54,10 @@ pub fn cli<W: Write>(writer: &mut W, config: &Config, deps: &dyn Deps) -> Result
     deps.print_title("Git Pull")?;
     let status = deps.run_shell(&commands::git_pull(&config.repo), true)?;
     if status != 0 {
-        ansi::write_flush(writer, &format!("{}Failed to pull changes{}\n", ansi::RED, ansi::RESET))?;
+        ansi::write_flush(
+            writer,
+            &format!("{}Failed to pull changes{}\n", ansi::RED, ansi::RESET),
+        )?;
         return Err(Error::GitPullFailed);
     }
 
@@ -71,14 +74,27 @@ pub fn cli<W: Write>(writer: &mut W, config: &Config, deps: &dyn Deps) -> Result
         if deps.confirm(true, Some("Do you want to add these changes to the stage?"))? {
             match deps.run_shell(&commands::git_add(&config.repo), true) {
                 Ok(_) => {
-                    ansi::write_flush(writer, &format!("{}Changes added to git stage successfully{}\n", ansi::GREEN, ansi::RESET))?;
+                    ansi::write_flush(
+                        writer,
+                        &format!(
+                            "{}Changes added to git stage successfully{}\n",
+                            ansi::GREEN,
+                            ansi::RESET
+                        ),
+                    )?;
                 }
                 Err(e) => {
-                    ansi::write_flush(writer, &format!("Failed to add changes to the stage: {e}\n"))?;
+                    ansi::write_flush(
+                        writer,
+                        &format!("Failed to add changes to the stage: {e}\n"),
+                    )?;
                 }
             }
         } else {
-            ansi::write_flush(writer, &format!("{}Changes not added to stage{}\n", ansi::RED, ansi::RESET))?;
+            ansi::write_flush(
+                writer,
+                &format!("{}Changes not added to stage{}\n", ansi::RED, ansi::RESET),
+            )?;
         }
     }
 
@@ -164,13 +180,7 @@ mod tests {
                 }
                 Ok(0)
             }),
-            confirm_result: Box::new(|_, msg| {
-                if msg.is_some() {
-                    Ok(false)
-                } else {
-                    Ok(true)
-                }
-            }),
+            confirm_result: Box::new(|_, msg| if msg.is_some() { Ok(false) } else { Ok(true) }),
             ..mock_deps_ok()
         };
         let mut buf = Vec::new();
