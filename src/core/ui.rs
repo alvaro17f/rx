@@ -4,7 +4,7 @@ use crate::core::ansi;
 use crate::error::Error;
 
 /// Print a banner title with ANSI-colored borders.
-pub fn print_title<W: Write>(writer: &mut W, text: &str) -> Result<(), Error> {
+pub fn print_title(writer: &mut dyn Write, text: &str) -> Result<(), Error> {
     let border: String = "*".repeat(text.len() + 4);
     ansi::write_flush(
         writer,
@@ -25,9 +25,9 @@ pub fn print_title<W: Write>(writer: &mut W, text: &str) -> Result<(), Error> {
 /// Prompt user for confirmation on `reader`/`writer`.
 ///
 /// `default` is returned when the user sends an empty line.
-pub fn confirm<R: BufRead, W: Write>(
-    reader: &mut R,
-    writer: &mut W,
+pub fn confirm(
+    reader: &mut dyn BufRead,
+    writer: &mut dyn Write,
     default: bool,
     msg: Option<&str>,
 ) -> Result<bool, Error> {
@@ -37,8 +37,8 @@ pub fn confirm<R: BufRead, W: Write>(
     Ok(parse_confirm_response(line.trim(), default))
 }
 
-fn write_confirm_prompt<W: Write>(
-    writer: &mut W,
+fn write_confirm_prompt(
+    writer: &mut dyn Write,
     default: bool,
     msg: Option<&str>,
 ) -> Result<(), Error> {

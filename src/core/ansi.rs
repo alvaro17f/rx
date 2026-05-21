@@ -17,7 +17,7 @@ pub const BOLD: &str = "\x1b[1m";
 pub const UNDERLINE: &str = "\x1b[4m";
 
 /// Write `msg` to `writer` and flush immediately.
-pub fn write_flush<W: Write + ?Sized>(writer: &mut W, msg: &str) -> Result<(), std::io::Error> {
+pub fn write_flush(writer: &mut dyn Write, msg: &str) -> Result<(), std::io::Error> {
     writer.write_all(msg.as_bytes())?;
     writer.flush()
 }

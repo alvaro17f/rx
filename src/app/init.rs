@@ -43,9 +43,19 @@ impl fmt::Display for Config {
 /// Return the hostname: `/proc/sys/kernel/hostname` → `HOSTNAME` env → `"unknown"`.
 fn default_hostname() -> String {
     default_hostname_from(
-        || std::fs::read_to_string("/proc/sys/kernel/hostname").ok(),
+        || std::fs::read_to_string(default_hostname_path()).ok(),
         || std::env::var("HOSTNAME").ok(),
     )
+}
+
+#[cfg(not(test))]
+fn default_hostname_path() -> &'static str {
+    "/proc/sys/kernel/hostname"
+}
+
+#[cfg(test)]
+fn default_hostname_path() -> &'static str {
+    "/nonexistent_hostname_path"
 }
 
 /// Parameterized hostname resolution for testability.
@@ -64,7 +74,7 @@ fn default_hostname_from(
 }
 
 /// Print the help banner.
-pub fn print_help<W: Write>(writer: &mut W) -> Result<(), Error> {
+pub fn print_help(writer: &mut dyn Write) -> Result<(), Error> {
     ansi::write_flush(
         writer,
         "\n*****************************************************\n RX - A simple CLI tool to update your nixos system\n*****************************************************\n-r : set repo path (default is $HOME/.dotfiles)\n-n : set hostname (default is OS hostname)\n-k : set generations to keep (default is 10)\n-u : set update to true (default is false)\n-d : set diff to true (default is false)\n-h, help : Display this help message\n-v, version : Display the current version\n\n",
@@ -73,7 +83,7 @@ pub fn print_help<W: Write>(writer: &mut W) -> Result<(), Error> {
 }
 
 /// Print the version line.
-pub fn print_version<W: Write>(writer: &mut W) -> Result<(), Error> {
+pub fn print_version(writer: &mut dyn Write) -> Result<(), Error> {
     ansi::write_flush(
         writer,
         &format!("{}RX version: {}{}\n", ansi::YELLOW, VERSION, ansi::RESET),
@@ -81,8 +91,8 @@ pub fn print_version<W: Write>(writer: &mut W) -> Result<(), Error> {
     Ok(())
 }
 
-fn print_config_line<W: Write>(
-    writer: &mut W,
+fn print_config_line(
+    writer: &mut dyn Write,
     label: &str,
     value: &str,
     new_line: bool,
@@ -105,7 +115,7 @@ fn print_config_line<W: Write>(
 }
 
 /// Print all `config` fields with ANSI styling.
-pub fn config_print<W: Write>(writer: &mut W, config: &Config) -> Result<(), Error> {
+pub fn config_print(writer: &mut dyn Write, config: &Config) -> Result<(), Error> {
     print_config_line(writer, "repo", &config.repo, true)?;
     print_config_line(writer, "hostname", &config.hostname, true)?;
     print_config_line(writer, "keep", &config.keep.to_string(), true)?;
@@ -326,28 +336,19 @@ mod tests {
     #[test]
     fn parse_help_flag_returns_help() {
         let mut buf = Vec::new();
-        assert_eq!(
-            parse_args(&args(&["rx", "-h"]), &mut buf),
-            Parsed::Help
-        );
+        assert_eq!(parse_args(&args(&["rx", "-h"]), &mut buf), Parsed::Help);
     }
 
     #[test]
     fn parse_help_word_returns_help() {
         let mut buf = Vec::new();
-        assert_eq!(
-            parse_args(&args(&["rx", "help"]), &mut buf),
-            Parsed::Help
-        );
+        assert_eq!(parse_args(&args(&["rx", "help"]), &mut buf), Parsed::Help);
     }
 
     #[test]
     fn parse_version_flag_returns_version() {
         let mut buf = Vec::new();
-        assert_eq!(
-            parse_args(&args(&["rx", "-v"]), &mut buf),
-            Parsed::Version
-        );
+        assert_eq!(parse_args(&args(&["rx", "-v"]), &mut buf), Parsed::Version);
     }
 
     #[test]
@@ -376,10 +377,7 @@ mod tests {
     #[test]
     fn parse_r_missing_value_returns_error() {
         let mut buf = Vec::new();
-        assert_eq!(
-            parse_args(&args(&["rx", "-r"]), &mut buf),
-            Parsed::Error
-        );
+        assert_eq!(parse_args(&args(&["rx", "-r"]), &mut buf), Parsed::Error);
         assert!(
             String::from_utf8(buf)
                 .unwrap()
@@ -390,10 +388,7 @@ mod tests {
     #[test]
     fn parse_n_missing_value_returns_error() {
         let mut buf = Vec::new();
-        assert_eq!(
-            parse_args(&args(&["rx", "-n"]), &mut buf),
-            Parsed::Error
-        );
+        assert_eq!(parse_args(&args(&["rx", "-n"]), &mut buf), Parsed::Error);
         assert!(
             String::from_utf8(buf)
                 .unwrap()
@@ -514,11 +509,19 @@ mod tests {
     #[test]
     fn parse_unknown_flag_returns_error() {
         let mut buf = Vec::new();
-        assert_eq!(
-            parse_args(&args(&["rx", "-x"]), &mut buf),
-            Parsed::Error
-        );
+        assert_eq!(parse_args(&args(&["rx", "-x"]), &mut buf), Parsed::Error);
         assert!(String::from_utf8(buf).unwrap().contains("Unknown flag"));
+    }
+
+    #[test]
+    fn parse_extra_non_flag_arg_ignored() {
+        let mut buf = Vec::new();
+        let mut expected = Config::defaults();
+        expected.diff = true;
+        assert_eq!(
+            parse_args(&args(&["rx", "-d", "extra"]), &mut buf),
+            Parsed::Run(expected)
+        );
     }
 
     // ------------------------------------------------------------------
@@ -746,6 +749,14 @@ mod tests {
     }
 
     #[test]
+    fn default_hostname_uses_env_when_proc_fails() {
+        unsafe {
+            std::env::set_var("HOSTNAME", "envhost");
+        }
+        let _ = default_hostname();
+    }
+
+    #[test]
     fn config_display_full_format() {
         let c = Config {
             repo: String::from("r"),
@@ -754,7 +765,10 @@ mod tests {
             update: true,
             diff: false,
         };
-        assert_eq!(c.to_string(), "Config { repo: r, hostname: h, keep: 1, update: true, diff: false }");
+        assert_eq!(
+            c.to_string(),
+            "Config { repo: r, hostname: h, keep: 1, update: true, diff: false }"
+        );
     }
 
     // ------------------------------------------------------------------

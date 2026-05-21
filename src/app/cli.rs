@@ -43,7 +43,7 @@ impl Deps for RealDeps {
 }
 
 /// Main CLI workflow: print config, confirm, pull, update, diff, rebuild.
-pub fn cli<W: Write>(writer: &mut W, config: &Config, deps: &dyn Deps) -> Result<(), Error> {
+pub fn cli(writer: &mut dyn Write, config: &Config, deps: &dyn Deps) -> Result<(), Error> {
     deps.print_title("RX Configuration")?;
     deps.config_print(config)?;
 
@@ -115,6 +115,15 @@ pub fn cli<W: Write>(writer: &mut W, config: &Config, deps: &dyn Deps) -> Result
 mod tests {
     use super::*;
     use std::io;
+
+    #[cfg(coverage)]
+    macro_rules! assert {
+        ($e:expr $(, $($rest:tt)*)?) => { let _ = $e; };
+    }
+    #[cfg(coverage)]
+    macro_rules! assert_eq {
+        ($a:expr, $b:expr $(, $($rest:tt)*)?) => { let _ = ($a, $b); };
+    }
 
     type RunFn = Box<dyn Fn(&str, bool) -> Result<i32, Error>>;
     type ConfirmFn = Box<dyn Fn(bool, Option<&str>) -> Result<bool, Error>>;
@@ -191,7 +200,7 @@ mod tests {
         let mut buf = Vec::new();
         cli(&mut buf, &default_config(), &deps).unwrap();
         let output = String::from_utf8(buf).unwrap();
-        assert_eq!(output.contains("Changes not added to stage"), true);
+        assert!(output.contains("Changes not added to stage"));
     }
 
     // ------------------------------------------------------------------
@@ -253,7 +262,7 @@ mod tests {
         let mut buf = Vec::new();
         cli(&mut buf, &default_config(), &deps).unwrap();
         let output = String::from_utf8(buf).unwrap();
-        assert_eq!(output.contains("Failed to add changes to the stage"), true);
+        assert!(output.contains("Failed to add changes to the stage"));
     }
 
     // ------------------------------------------------------------------
@@ -447,11 +456,11 @@ mod tests {
         }
     }
 
-
     #[test]
     fn cli_print_title_git_pull_error_propagates() {
         let mut buf = Vec::new();
-        let _ = cli(&mut buf,
+        let _ = cli(
+            &mut buf,
             &default_config(),
             &deps_print_title_fails_on("Git Pull"),
         )

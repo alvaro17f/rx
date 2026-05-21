@@ -8,3 +8,6 @@ edition = "2024"
 [lints.clippy]
 pedantic = "warn"
 
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(coverage)', 'cfg(coverage_nightly)'] }
+
