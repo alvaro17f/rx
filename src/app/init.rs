@@ -187,7 +187,7 @@ pub fn parse_args(args: &[String], writer: &mut dyn Write) -> Parsed {
                         } else if flag_char == 'n' {
                             config.hostname = value;
                         } else if let Ok(num) = value.parse::<u8>() {
-                            config.keep = num
+                            config.keep = num;
                         } else {
                             ansi::write_flush(
                                 writer,
@@ -249,7 +249,7 @@ mod tests {
     use std::io;
 
     fn args(from: &[&str]) -> Vec<String> {
-        from.iter().map(|s| s.to_string()).collect()
+        from.iter().copied().map(str::to_string).collect()
     }
 
     // ------------------------------------------------------------------
@@ -605,7 +605,7 @@ mod tests {
     struct FailingWriter;
     impl Write for FailingWriter {
         fn write(&mut self, _: &[u8]) -> io::Result<usize> {
-            Err(std::io::Error::new(std::io::ErrorKind::Other, "fail"))
+            Err(std::io::Error::other("fail"))
         }
         fn flush(&mut self) -> io::Result<()> {
             Ok(())
@@ -621,7 +621,7 @@ mod tests {
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
             self.count += 1;
             if self.count >= self.fail_after {
-                Err(io::Error::new(io::ErrorKind::Other, "fail"))
+                Err(io::Error::other("fail"))
             } else {
                 Ok(buf.len())
             }

@@ -1,4 +1,4 @@
-#![expect(dead_code, reason = "unused in current palette")]
+#![allow(dead_code)]
 use std::io::Write;
 
 // ANSI escape codes. Unused constants are kept for parity with the original
@@ -45,11 +45,11 @@ mod tests {
 
     impl Write for FailingWriter {
         fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-            Err(std::io::Error::new(std::io::ErrorKind::Other, "fail"))
+            Err(std::io::Error::other("fail"))
         }
 
         fn flush(&mut self) -> std::io::Result<()> {
-            Err(std::io::Error::new(std::io::ErrorKind::Other, "fail"))
+            Err(std::io::Error::other("fail"))
         }
     }
 
@@ -81,7 +81,7 @@ mod tests {
                 Ok(buf.len())
             }
             fn flush(&mut self) -> std::io::Result<()> {
-                Err(std::io::Error::new(std::io::ErrorKind::Other, "fail"))
+                Err(std::io::Error::other("fail"))
             }
         }
         let mut writer = FlushFailingWriter;

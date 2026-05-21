@@ -91,43 +91,43 @@ mod tests {
 
     #[test]
     fn parse_confirm_y_returns_true() {
-        assert_eq!(parse_confirm_response("y", false).unwrap(), true);
+        assert!(parse_confirm_response("y", false));
     }
 
     #[test]
     fn parse_confirm_uppercase_y_returns_true() {
-        assert_eq!(parse_confirm_response("Y", false).unwrap(), true);
+        assert!(parse_confirm_response("Y", false));
     }
 
     #[test]
     fn parse_confirm_yes_returns_true() {
-        assert_eq!(parse_confirm_response("yes", false).unwrap(), true);
+        assert!(parse_confirm_response("yes", false));
     }
 
     #[test]
     fn parse_confirm_n_returns_false() {
-        assert_eq!(parse_confirm_response("n", true).unwrap(), false);
+        assert!(!parse_confirm_response("n", true));
     }
 
     #[test]
     fn parse_confirm_no_returns_false() {
-        assert_eq!(parse_confirm_response("no", true).unwrap(), false);
+        assert!(!parse_confirm_response("no", true));
     }
 
     #[test]
     fn parse_confirm_empty_with_true_default_returns_true() {
-        assert_eq!(parse_confirm_response("", true).unwrap(), true);
+        assert!(parse_confirm_response("", true));
     }
 
     #[test]
     fn parse_confirm_empty_with_false_default_returns_false() {
-        assert_eq!(parse_confirm_response("", false).unwrap(), false);
+        assert!(!parse_confirm_response("", false));
     }
 
     #[test]
     fn parse_confirm_garbage_returns_false() {
-        assert_eq!(parse_confirm_response("maybe", true).unwrap(), false);
-        assert_eq!(parse_confirm_response("maybe", false).unwrap(), false);
+        assert!(!parse_confirm_response("maybe", true));
+        assert!(!parse_confirm_response("maybe", false));
     }
 
     #[test]
@@ -172,7 +172,7 @@ mod tests {
     struct FailingWriter;
     impl Write for FailingWriter {
         fn write(&mut self, _: &[u8]) -> io::Result<usize> {
-            Err(std::io::Error::new(std::io::ErrorKind::Other, "fail"))
+            Err(std::io::Error::other("fail"))
         }
         fn flush(&mut self) -> io::Result<()> {
             Ok(())
@@ -188,12 +188,12 @@ mod tests {
     struct FailingReader;
     impl io::Read for FailingReader {
         fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
-            Err(std::io::Error::new(std::io::ErrorKind::Other, "fail"))
+            Err(std::io::Error::other("fail"))
         }
     }
     impl io::BufRead for FailingReader {
         fn fill_buf(&mut self) -> io::Result<&[u8]> {
-            Err(std::io::Error::new(std::io::ErrorKind::Other, "fail"))
+            Err(std::io::Error::other("fail"))
         }
         fn consume(&mut self, _: usize) {}
     }

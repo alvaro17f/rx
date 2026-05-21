@@ -116,11 +116,16 @@ mod tests {
     use super::*;
     use std::io;
 
+    type RunFn = Box<dyn Fn(&str, bool) -> Result<i32, Error>>;
+    type ConfirmFn = Box<dyn Fn(bool, Option<&str>) -> Result<bool, Error>>;
+    type PrintTitleFn = Box<dyn Fn(&str) -> Result<(), Error>>;
+    type ConfigPrintFn = Box<dyn Fn(&Config) -> Result<(), Error>>;
+
     struct MockDeps {
-        run_result: Box<dyn Fn(&str, bool) -> Result<i32, Error>>,
-        confirm_result: Box<dyn Fn(bool, Option<&str>) -> Result<bool, Error>>,
-        print_title_fn: Box<dyn Fn(&str) -> Result<(), Error>>,
-        config_print_fn: Box<dyn Fn(&Config) -> Result<(), Error>>,
+        run_result: RunFn,
+        confirm_result: ConfirmFn,
+        print_title_fn: PrintTitleFn,
+        config_print_fn: ConfigPrintFn,
     }
 
     impl Deps for MockDeps {
@@ -236,10 +241,7 @@ mod tests {
         let deps = MockDeps {
             run_result: Box::new(|cmd, _| {
                 if cmd.contains("add .") {
-                    return Err(Error::Io(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        "mock error",
-                    )));
+                    return Err(Error::Io(std::io::Error::other("mock error")));
                 }
                 if cmd.contains("diff --exit-code") {
                     return Ok(1);
@@ -261,7 +263,7 @@ mod tests {
     struct FailingWriter;
     impl Write for FailingWriter {
         fn write(&mut self, _: &[u8]) -> io::Result<usize> {
-            Err(std::io::Error::new(std::io::ErrorKind::Other, "fail"))
+            Err(std::io::Error::other("fail"))
         }
         fn flush(&mut self) -> io::Result<()> {
             Ok(())
@@ -369,10 +371,7 @@ mod tests {
         let deps = MockDeps {
             run_result: Box::new(|cmd, _| {
                 if cmd.contains("add .") {
-                    Err(Error::Io(std::io::Error::new(
-                        std::io::ErrorKind::Other,
-                        "mock",
-                    )))
+                    Err(Error::Io(std::io::Error::other("mock")))
                 } else if cmd.contains("diff --exit-code") {
                     Ok(1)
                 } else {

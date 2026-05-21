@@ -40,7 +40,7 @@ mod tests {
 
     #[test]
     fn display_io_error_contains_io_prefix() {
-        let err = Error::Io(std::io::Error::new(std::io::ErrorKind::Other, "test"));
+        let err = Error::Io(std::io::Error::other("test"));
         assert!(err.to_string().contains("IO error"));
     }
 
@@ -51,7 +51,7 @@ mod tests {
 
     #[test]
     fn source_io_error_yields_some() {
-        let err = Error::Io(std::io::Error::new(std::io::ErrorKind::Other, "test"));
+        let err = Error::Io(std::io::Error::other("test"));
         assert!(std::error::Error::source(&err).is_some());
     }
 
