@@ -1,19 +1,26 @@
-#![allow(dead_code)]
 use std::io::Write;
 
-// ANSI escape codes. Unused constants are kept for parity with the original
-// Zig source and potential future styling needs.
-
+// ANSI escape codes used in rx output styling.
 pub const RED: &str = "\x1b[31m";
 pub const GREEN: &str = "\x1b[32m";
 pub const YELLOW: &str = "\x1b[33m";
 pub const BLUE: &str = "\x1b[34m";
+// Used only in tests; kept for future styling needs.
+#[allow(dead_code)]
 pub const MAGENTA: &str = "\x1b[35m";
 pub const CYAN: &str = "\x1b[36m";
+// Used only in tests; kept for future styling needs.
+#[allow(dead_code)]
 pub const GRAY: &str = "\x1b[37m";
+// Used only in tests; kept for future styling needs.
+#[allow(dead_code)]
 pub const BLACK: &str = "\x1b[30m";
 pub const RESET: &str = "\x1b[0m";
+// Used only in tests; kept for future styling needs.
+#[allow(dead_code)]
 pub const BOLD: &str = "\x1b[1m";
+// Used only in tests; kept for future styling needs.
+#[allow(dead_code)]
 pub const UNDERLINE: &str = "\x1b[4m";
 
 /// Write `msg` to `writer` and flush immediately.
@@ -41,22 +48,18 @@ mod tests {
         assert!(!UNDERLINE.is_empty());
     }
 
-    struct FailingWriter;
 
-    impl Write for FailingWriter {
-        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
-            Err(std::io::Error::other("fail"))
-        }
-
-        fn flush(&mut self) -> std::io::Result<()> {
-            Err(std::io::Error::other("fail"))
-        }
-    }
 
     #[test]
     fn failing_writer_flush_is_err() {
-        let mut w = FailingWriter;
+        let mut w = crate::test_helpers::FailingFlushWriter;
         assert!(std::io::Write::flush(&mut w).is_err());
+    }
+
+    #[test]
+    fn failing_writer_write_is_err() {
+        let mut w = crate::test_helpers::FailingFlushWriter;
+        assert!(w.write(b"x").is_err());
     }
 
     #[test]
@@ -68,23 +71,14 @@ mod tests {
 
     #[test]
     fn write_flush_propagates_write_error() {
-        let mut writer = FailingWriter;
+        let mut writer = crate::test_helpers::FailingWriter;
         assert!(write_flush(&mut writer, "x").is_err());
     }
 
     #[test]
     fn write_flush_propagates_flush_error_on_empty_write() {
         // Write succeeds but flush fails
-        struct FlushFailingWriter;
-        impl Write for FlushFailingWriter {
-            fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-                Ok(buf.len())
-            }
-            fn flush(&mut self) -> std::io::Result<()> {
-                Err(std::io::Error::other("fail"))
-            }
-        }
-        let mut writer = FlushFailingWriter;
+        let mut writer = crate::test_helpers::FlushFailingWriter;
         assert!(write_flush(&mut writer, "x").is_err());
     }
 }

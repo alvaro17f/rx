@@ -31,6 +31,7 @@ fn unknown_flag_exits_nonzero() {
         .output()
         .expect("run rx");
     assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2));
 }
 
 #[test]
@@ -87,4 +88,26 @@ fn invalid_k_flag_exits_nonzero() {
         .output()
         .expect("run rx");
     assert!(!output.status.success());
+    assert_eq!(output.status.code(), Some(2));
+}
+
+#[test]
+fn help_long_flag_prints_banner() {
+    let output = Command::new(RX)
+        .arg("--help")
+        .output()
+        .expect("run rx");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("RX"));
+}
+
+#[test]
+fn version_long_flag_prints_semver() {
+    let output = Command::new(RX)
+        .arg("--version")
+        .output()
+        .expect("run rx");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("0.1.0"));
 }

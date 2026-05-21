@@ -4,6 +4,9 @@ use crate::core::ansi;
 use crate::error::Error;
 
 /// Print a banner title with ANSI-colored borders.
+///
+/// Note: `text.len()` counts bytes, not graphemes. Non-ASCII text
+/// will misalign borders. Acceptable for ASCII-only CLI output.
 pub fn print_title(writer: &mut dyn Write, text: &str) -> Result<(), Error> {
     let border: String = "*".repeat(text.len() + 4);
     ansi::write_flush(
@@ -153,20 +156,11 @@ mod tests {
         assert!(confirm(&mut reader, &mut writer, true, None).expect("confirm"));
     }
 
-    struct FailingWriter;
 
-    impl Write for FailingWriter {
-        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
-            Err(std::io::Error::other("fail"))
-        }
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
 
     #[test]
     fn failing_writer_flush_is_ok() {
-        let mut writer = FailingWriter;
+        let mut writer = crate::test_helpers::FailingWriter;
         assert!(io::Write::flush(&mut writer).is_ok());
     }
 
@@ -200,14 +194,14 @@ mod tests {
 
     #[test]
     fn print_title_error_propagation() {
-        let mut writer = FailingWriter;
+        let mut writer = crate::test_helpers::FailingWriter;
         assert!(print_title(&mut writer, "Test").is_err());
     }
 
     #[test]
     fn confirm_error_from_writer() {
         let mut reader = io::BufReader::new(b"y\n".as_slice());
-        let mut writer = FailingWriter;
+        let mut writer = crate::test_helpers::FailingWriter;
         let result = confirm(&mut reader, &mut writer, false, None);
         assert!(result.is_err());
     }
@@ -215,7 +209,7 @@ mod tests {
     #[test]
     fn confirm_error_from_writer_with_message() {
         let mut reader = io::BufReader::new(b"y\n".as_slice());
-        let mut writer = FailingWriter;
+        let mut writer = crate::test_helpers::FailingWriter;
         let result = confirm(&mut reader, &mut writer, false, Some("Sure"));
         assert!(result.is_err());
     }

@@ -5,6 +5,8 @@ use crate::core::ansi;
 use crate::error::Error;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
+const DEFAULT_REPO: &str = "~/.dotfiles";
+const DEFAULT_KEEP: u8 = 10;
 
 /// Parsed CLI configuration.
 #[derive(Debug, PartialEq)]
@@ -21,9 +23,9 @@ impl Config {
     /// keep `10`, update/diff `false`.
     pub fn defaults() -> Self {
         Self {
-            repo: String::from("~/.dotfiles"),
+            repo: String::from(DEFAULT_REPO),
             hostname: default_hostname(),
-            keep: 10,
+            keep: DEFAULT_KEEP,
             update: false,
             diff: false,
         }
@@ -40,12 +42,24 @@ impl fmt::Display for Config {
     }
 }
 
-/// Return the hostname: `/proc/sys/kernel/hostname` → `HOSTNAME` env → `"unknown"`.
+/// Return the hostname: `/proc/sys/kernel/hostname` → `HOSTNAME` env → `hostname` cmd → `"unknown"`.
 fn default_hostname() -> String {
     default_hostname_from(
         || std::fs::read_to_string(default_hostname_path()).ok(),
         || std::env::var("HOSTNAME").ok(),
+        hostname_from_cmd,
     )
+}
+
+/// Read hostname from `hostname` command output.
+fn hostname_from_cmd() -> Option<String> {
+    hostname_from_cmd_inner(std::process::Command::new("hostname").output().ok())
+}
+
+/// Inner logic extracted for testability.
+fn hostname_from_cmd_inner(output: Option<std::process::Output>) -> Option<String> {
+    let out = output?;
+    String::from_utf8(out.stdout).ok()
 }
 
 #[cfg(not(test))]
@@ -62,14 +76,17 @@ fn default_hostname_path() -> &'static str {
 ///
 /// `proc_hostname` tries to read `/proc/sys/kernel/hostname`,
 /// `env_hostname` falls back to the `HOSTNAME` env var,
-/// and both failing yields `"unknown"`.
+/// `cmd_hostname` falls back to `hostname` command output,
+/// and all failing yields `"unknown"`.
 fn default_hostname_from(
     proc_hostname: impl FnOnce() -> Option<String>,
     env_hostname: impl FnOnce() -> Option<String>,
+    cmd_hostname: impl FnOnce() -> Option<String>,
 ) -> String {
     proc_hostname()
         .map(|s| s.trim().to_owned())
         .or_else(env_hostname)
+        .or_else(cmd_hostname)
         .unwrap_or_else(|| String::from("unknown"))
 }
 
@@ -77,7 +94,7 @@ fn default_hostname_from(
 pub fn print_help(writer: &mut dyn Write) -> Result<(), Error> {
     ansi::write_flush(
         writer,
-        "\n*****************************************************\n RX - A simple CLI tool to update your nixos system\n*****************************************************\n-r : set repo path (default is $HOME/.dotfiles)\n-n : set hostname (default is OS hostname)\n-k : set generations to keep (default is 10)\n-u : set update to true (default is false)\n-d : set diff to true (default is false)\n-h, help : Display this help message\n-v, version : Display the current version\n\n",
+        "\n*****************************************************\n RX - A simple CLI tool to update your nixos system\n*****************************************************\n-r, --repo        : set repo path (default is $HOME/.dotfiles)\n-n, --hostname    : set hostname (default is OS hostname)\n-k, --keep        : set generations to keep (default is 10)\n-u, --update      : set update to true (default is false)\n-d, --diff        : set diff to true (default is false)\n-h, --help        : Display this help message\n-v, --version     : Display the current version\n\n",
     )?;
     Ok(())
 }
@@ -130,9 +147,11 @@ pub enum Parsed {
     Help,
     Version,
     Run(Config),
-    Error,
+    Invalid,
 }
 
+/// Write a parse error to `writer`. Error is intentionally discarded —
+/// we're already in an error path and there's no useful recovery.
 fn write_parse_error(writer: &mut dyn Write, msg: &str) {
     let _ = ansi::write_flush(
         writer,
@@ -158,14 +177,46 @@ pub fn parse_args(args: &[String], writer: &mut dyn Write) -> Parsed {
 
     if !args[1].starts_with('-') {
         write_parse_error(writer, &format!("Unknown argument \"{}\"", &args[1]));
-        return Parsed::Error;
+        return Parsed::Invalid;
     }
 
     let mut config = Config::defaults();
     let mut i = 1;
     while i < args.len() {
         let arg = &args[i];
-        if arg.starts_with('-') {
+        if arg.starts_with("--") {
+            // Long flags
+            if arg == "--help" {
+                return Parsed::Help;
+            } else if arg == "--version" {
+                return Parsed::Version;
+            } else if arg == "--update" {
+                config.update = true;
+            } else if arg == "--diff" {
+                config.diff = true;
+            } else if arg == "--repo" || arg == "--hostname" || arg == "--keep" {
+                if i + 1 >= args.len() {
+                    write_parse_error(writer, &format!("\"{arg}\" flag requires an argument"));
+                    return Parsed::Invalid;
+                }
+                let value = args[i + 1].clone();
+                if arg == "--repo" {
+                    config.repo = value;
+                } else if arg == "--hostname" {
+                    config.hostname = value;
+                } else if let Ok(num) = value.parse::<u8>() {
+                    config.keep = num;
+                } else {
+                    write_parse_error(writer, "Value of \"--keep\" flag is not numeric.");
+                    return Parsed::Invalid;
+                }
+                i += 1;
+            } else {
+                write_parse_error(writer, &format!("Unknown flag \"{arg}\""));
+                return Parsed::Invalid;
+            }
+        } else if arg.starts_with('-') {
+            // Short flags
             let flags = arg.strip_prefix('-').unwrap_or(arg);
             let mut skip_next = false;
             for flag_char in flags.chars() {
@@ -177,7 +228,7 @@ pub fn parse_args(args: &[String], writer: &mut dyn Write) -> Parsed {
                     'r' | 'n' | 'k' => {
                         if i + 1 >= args.len() {
                             write_parse_error(writer, &format!("\"-{flag_char}\" flag requires an argument"));
-                            return Parsed::Error;
+                            return Parsed::Invalid;
                         }
                         let value = args[i + 1].clone();
                         if flag_char == 'r' {
@@ -188,14 +239,14 @@ pub fn parse_args(args: &[String], writer: &mut dyn Write) -> Parsed {
                             config.keep = num;
                         } else {
                             write_parse_error(writer, "Value of \"-k\" flag is not numeric.");
-                            return Parsed::Error;
+                            return Parsed::Invalid;
                         }
                         skip_next = true;
                         break;
                     }
                     _ => {
                         write_parse_error(writer, &format!("Unknown flag \"-{flag_char}\""));
-                        return Parsed::Error;
+                        return Parsed::Invalid;
                     }
                 }
             }
@@ -218,7 +269,7 @@ pub fn run(
     match parse_args(args, writer) {
         Parsed::Help => print_help(writer),
         Parsed::Version => print_version(writer),
-        Parsed::Error => Err(Error::InvalidArgs),
+        Parsed::Invalid => Err(Error::InvalidArgs),
         Parsed::Run(config) => crate::app::cli::cli(writer, &config, deps),
     }
 }
@@ -231,6 +282,16 @@ mod tests {
 
     fn args(from: &[&str]) -> Vec<String> {
         from.iter().copied().map(str::to_string).collect()
+    }
+
+    fn test_config() -> Config {
+        Config {
+            repo: String::from("r"),
+            hostname: String::from("h"),
+            keep: 1,
+            update: false,
+            diff: false,
+        }
     }
 
     // ------------------------------------------------------------------
@@ -336,7 +397,7 @@ mod tests {
         let mut buf = Vec::new();
         assert_eq!(
             parse_args(&args(&["rx", "unknown"]), &mut buf),
-            Parsed::Error
+            Parsed::Invalid
         );
         assert!(String::from_utf8_lossy(&buf).contains("Unknown argument"));
     }
@@ -348,14 +409,14 @@ mod tests {
     #[test]
     fn parse_r_missing_value_returns_error() {
         let mut buf = Vec::new();
-        assert_eq!(parse_args(&args(&["rx", "-r"]), &mut buf), Parsed::Error);
+        assert_eq!(parse_args(&args(&["rx", "-r"]), &mut buf), Parsed::Invalid);
         assert!(String::from_utf8_lossy(&buf).contains("requires an argument"));
     }
 
     #[test]
     fn parse_n_missing_value_returns_error() {
         let mut buf = Vec::new();
-        assert_eq!(parse_args(&args(&["rx", "-n"]), &mut buf), Parsed::Error);
+        assert_eq!(parse_args(&args(&["rx", "-n"]), &mut buf), Parsed::Invalid);
         assert!(String::from_utf8_lossy(&buf).contains("requires an argument"));
     }
 
@@ -364,7 +425,7 @@ mod tests {
         let mut buf = Vec::new();
         assert_eq!(
             parse_args(&args(&["rx", "-k", "abc"]), &mut buf),
-            Parsed::Error
+            Parsed::Invalid
         );
         assert!(String::from_utf8_lossy(&buf).contains("not numeric"));
     }
@@ -472,7 +533,7 @@ mod tests {
     #[test]
     fn parse_unknown_flag_returns_error() {
         let mut buf = Vec::new();
-        assert_eq!(parse_args(&args(&["rx", "-x"]), &mut buf), Parsed::Error);
+        assert_eq!(parse_args(&args(&["rx", "-x"]), &mut buf), Parsed::Invalid);
         assert!(String::from_utf8_lossy(&buf).contains("Unknown flag"));
     }
 
@@ -488,7 +549,105 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // run dispatcher
+    // parse_args — long flags
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn parse_help_long_returns_help() {
+        let mut buf = Vec::new();
+        assert_eq!(parse_args(&args(&["rx", "--help"]), &mut buf), Parsed::Help);
+    }
+
+    #[test]
+    fn parse_version_long_returns_version() {
+        let mut buf = Vec::new();
+        assert_eq!(parse_args(&args(&["rx", "--version"]), &mut buf), Parsed::Version);
+    }
+
+    #[test]
+    fn parse_update_long_sets_update() {
+        let mut buf = Vec::new();
+        let mut expected = Config::defaults();
+        expected.update = true;
+        assert_eq!(
+            parse_args(&args(&["rx", "--update"]), &mut buf),
+            Parsed::Run(expected)
+        );
+    }
+
+    #[test]
+    fn parse_diff_long_sets_diff() {
+        let mut buf = Vec::new();
+        let mut expected = Config::defaults();
+        expected.diff = true;
+        assert_eq!(
+            parse_args(&args(&["rx", "--diff"]), &mut buf),
+            Parsed::Run(expected)
+        );
+    }
+
+    #[test]
+    fn parse_repo_long_sets_repo() {
+        let mut buf = Vec::new();
+        let mut expected = Config::defaults();
+        expected.repo = String::from("/my/repo");
+        assert_eq!(
+            parse_args(&args(&["rx", "--repo", "/my/repo"]), &mut buf),
+            Parsed::Run(expected)
+        );
+    }
+
+    #[test]
+    fn parse_hostname_long_sets_hostname() {
+        let mut buf = Vec::new();
+        let mut expected = Config::defaults();
+        expected.hostname = String::from("myhost");
+        assert_eq!(
+            parse_args(&args(&["rx", "--hostname", "myhost"]), &mut buf),
+            Parsed::Run(expected)
+        );
+    }
+
+    #[test]
+    fn parse_keep_long_sets_keep() {
+        let mut buf = Vec::new();
+        let mut expected = Config::defaults();
+        expected.keep = 5;
+        assert_eq!(
+            parse_args(&args(&["rx", "--keep", "5"]), &mut buf),
+            Parsed::Run(expected)
+        );
+    }
+
+    #[test]
+    fn parse_keep_long_non_numeric_returns_error() {
+        let mut buf = Vec::new();
+        assert_eq!(
+            parse_args(&args(&["rx", "--keep", "abc"]), &mut buf),
+            Parsed::Invalid
+        );
+        assert!(String::from_utf8_lossy(&buf).contains("not numeric"));
+    }
+
+    #[test]
+    fn parse_repo_long_missing_value_returns_error() {
+        let mut buf = Vec::new();
+        assert_eq!(
+            parse_args(&args(&["rx", "--repo"]), &mut buf),
+            Parsed::Invalid
+        );
+        assert!(String::from_utf8_lossy(&buf).contains("requires an argument"));
+    }
+
+    #[test]
+    fn parse_unknown_long_flag_returns_error() {
+        let mut buf = Vec::new();
+        assert_eq!(
+            parse_args(&args(&["rx", "--unknown"]), &mut buf),
+            Parsed::Invalid
+        );
+        assert!(String::from_utf8_lossy(&buf).contains("Unknown flag"));
+    }
     // ------------------------------------------------------------------
 
     #[test]
@@ -531,8 +690,8 @@ mod tests {
     #[test]
     fn config_defaults_repo_and_keep() {
         let c = Config::defaults();
-        assert_eq!(c.repo, "~/.dotfiles");
-        assert_eq!(c.keep, 10);
+        assert_eq!(c.repo, DEFAULT_REPO);
+        assert_eq!(c.keep, DEFAULT_KEEP);
     }
 
     #[test]
@@ -555,39 +714,37 @@ mod tests {
 
     #[test]
     fn default_hostname_from_proc_succeeds() {
-        let result = default_hostname_from(|| Some(String::from("myhost\n")), || None);
+        let result = default_hostname_from(|| Some(String::from("myhost\n")), || None, || None);
         assert_eq!(result, "myhost");
     }
 
     #[test]
     fn default_hostname_from_falls_back_to_env() {
-        let result = default_hostname_from(|| None, || Some(String::from("envhost")));
+        let result = default_hostname_from(|| None, || Some(String::from("envhost")), || None);
         assert_eq!(result, "envhost");
     }
 
     #[test]
+    fn default_hostname_from_falls_back_to_cmd() {
+        let result = default_hostname_from(|| None, || None, || Some(String::from("cmdhost")));
+        assert_eq!(result, "cmdhost");
+    }
+
+    #[test]
     fn default_hostname_from_falls_back_to_unknown() {
-        let result = default_hostname_from(|| None, || None);
+        let result = default_hostname_from(|| None, || None, || None);
         assert_eq!(result, "unknown");
     }
 
     // ------------------------------------------------------------------
-    // error propagation via FailingWriter
+    // error propagation via crate::test_helpers::FailingWriter
     // ------------------------------------------------------------------
 
-    struct FailingWriter;
-    impl Write for FailingWriter {
-        fn write(&mut self, _: &[u8]) -> io::Result<usize> {
-            Err(std::io::Error::other("fail"))
-        }
-        fn flush(&mut self) -> io::Result<()> {
-            Ok(())
-        }
-    }
+
 
     #[test]
     fn failing_writer_flush_returns_ok() {
-        let mut w = FailingWriter;
+        let mut w = crate::test_helpers::FailingWriter;
         assert!(io::Write::flush(&mut w).is_ok());
     }
 
@@ -612,13 +769,13 @@ mod tests {
 
     #[test]
     fn print_help_error_propagation() {
-        let mut writer = FailingWriter;
+        let mut writer = crate::test_helpers::FailingWriter;
         assert!(print_help(&mut writer).is_err());
     }
 
     #[test]
     fn print_version_error_propagation() {
-        let mut writer = FailingWriter;
+        let mut writer = crate::test_helpers::FailingWriter;
         assert!(print_version(&mut writer).is_err());
     }
 
@@ -628,13 +785,7 @@ mod tests {
             fail_after: 1,
             count: 0,
         };
-        let config = Config {
-            repo: String::from("r"),
-            hostname: String::from("h"),
-            keep: 1,
-            update: false,
-            diff: false,
-        };
+        let config = test_config();
         assert!(config_print(&mut writer, &config).is_err());
     }
 
@@ -644,13 +795,7 @@ mod tests {
             fail_after: 2,
             count: 0,
         };
-        let config = Config {
-            repo: String::from("r"),
-            hostname: String::from("h"),
-            keep: 1,
-            update: false,
-            diff: false,
-        };
+        let config = test_config();
         assert!(config_print(&mut writer, &config).is_err());
     }
 
@@ -660,13 +805,7 @@ mod tests {
             fail_after: 3,
             count: 0,
         };
-        let config = Config {
-            repo: String::from("r"),
-            hostname: String::from("h"),
-            keep: 1,
-            update: false,
-            diff: false,
-        };
+        let config = test_config();
         assert!(config_print(&mut writer, &config).is_err());
     }
 
@@ -676,13 +815,7 @@ mod tests {
             fail_after: 4,
             count: 0,
         };
-        let config = Config {
-            repo: String::from("r"),
-            hostname: String::from("h"),
-            keep: 1,
-            update: false,
-            diff: false,
-        };
+        let config = test_config();
         assert!(config_print(&mut writer, &config).is_err());
     }
 
@@ -692,19 +825,13 @@ mod tests {
             fail_after: 5,
             count: 0,
         };
-        let config = Config {
-            repo: String::from("r"),
-            hostname: String::from("h"),
-            keep: 1,
-            update: false,
-            diff: false,
-        };
+        let config = test_config();
         assert!(config_print(&mut writer, &config).is_err());
     }
 
     #[test]
     fn print_config_line_error_propagation() {
-        let mut writer = FailingWriter;
+        let mut writer = crate::test_helpers::FailingWriter;
         assert!(print_config_line(&mut writer, "k", "v", true).is_err());
     }
 
@@ -714,12 +841,29 @@ mod tests {
     }
 
     #[test]
-    fn default_hostname_uses_env_when_proc_fails() {
-        unsafe {
-            std::env::set_var("HOSTNAME", "envhost");
-        }
-        let _ = default_hostname();
+    fn hostname_from_cmd_returns_some_on_unix() {
+        let result = hostname_from_cmd();
+        assert!(result.is_some());
+        assert!(!result.expect("hostname").trim().is_empty());
     }
+
+    #[test]
+    fn hostname_from_cmd_inner_returns_none_on_bad_utf8() {
+        use std::os::unix::process::ExitStatusExt;
+        let output = std::process::Output {
+            status: std::process::ExitStatus::from_raw(0),
+            stdout: vec![0xff, 0xfe], // invalid UTF-8
+            stderr: Vec::new(),
+        };
+        assert!(hostname_from_cmd_inner(Some(output)).is_none());
+    }
+
+    #[test]
+    fn hostname_from_cmd_inner_returns_none_on_none() {
+        assert!(hostname_from_cmd_inner(None).is_none());
+    }
+
+
 
     #[test]
     fn config_display_full_format() {
@@ -743,7 +887,10 @@ mod tests {
     struct MockCliDeps;
 
     impl Deps for MockCliDeps {
-        fn run_shell(&self, _: &str, _: bool) -> Result<i32, Error> {
+        fn run_cmd(&self, _: &[String], _: bool) -> Result<i32, Error> {
+            Ok(0)
+        }
+        fn run_pipeline(&self, _: &str, _: bool) -> Result<i32, Error> {
             Ok(0)
         }
         fn confirm(&self, _: bool, _: Option<&str>) -> Result<bool, Error> {
