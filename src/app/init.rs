@@ -8,6 +8,17 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 const DEFAULT_REPO: &str = "~/.dotfiles";
 const DEFAULT_KEEP: u8 = 10;
 
+/// Expand `~` at the start of a path to the user's home directory.
+/// Returns the path unchanged if `~` is not the leading character
+/// or if `$HOME` is not set.
+fn expand_tilde(path: &str) -> String {
+    if let Some(rest) = path.strip_prefix('~') && let Ok(home) = std::env::var("HOME") {
+        format!("{home}{rest}")
+    } else {
+        path.to_owned()
+    }
+}
+
 /// Parsed CLI configuration.
 #[derive(Debug, PartialEq)]
 pub struct Config {
@@ -23,7 +34,7 @@ impl Config {
     /// keep `10`, update/diff `false`.
     pub fn defaults() -> Self {
         Self {
-            repo: String::from(DEFAULT_REPO),
+            repo: expand_tilde(DEFAULT_REPO),
             hostname: default_hostname(),
             keep: DEFAULT_KEEP,
             update: false,
@@ -201,7 +212,7 @@ pub fn parse_args(args: &[String], writer: &mut dyn Write) -> Parsed {
                 }
                 let value = args[i + 1].clone();
                 if arg == "--repo" {
-                    config.repo = value;
+                    config.repo = expand_tilde(&value);
                 } else if arg == "--hostname" {
                     config.hostname = value;
                 } else if let Ok(num) = value.parse::<u8>() {
@@ -227,12 +238,15 @@ pub fn parse_args(args: &[String], writer: &mut dyn Write) -> Parsed {
                     'u' => config.update = true,
                     'r' | 'n' | 'k' => {
                         if i + 1 >= args.len() {
-                            write_parse_error(writer, &format!("\"-{flag_char}\" flag requires an argument"));
+                            write_parse_error(
+                                writer,
+                                &format!("\"-{flag_char}\" flag requires an argument"),
+                            );
                             return Parsed::Invalid;
                         }
                         let value = args[i + 1].clone();
                         if flag_char == 'r' {
-                            config.repo = value;
+                            config.repo = expand_tilde(&value);
                         } else if flag_char == 'n' {
                             config.hostname = value;
                         } else if let Ok(num) = value.parse::<u8>() {
@@ -350,6 +364,32 @@ mod tests {
         assert!(config_print(&mut buf, &config).is_ok());
         let s = String::from_utf8_lossy(&buf);
         assert!(!s.ends_with('\n'));
+    }
+
+    // ------------------------------------------------------------------
+    // expand_tilde
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn expand_tilde_expands_home() {
+        let home = std::env::var("HOME").expect("HOME set");
+        assert_eq!(expand_tilde("~/.dotfiles"), format!("{home}/.dotfiles"));
+    }
+
+    #[test]
+    fn expand_tilde_leaves_absolute_path() {
+        assert_eq!(expand_tilde("/absolute/path"), "/absolute/path");
+    }
+
+    #[test]
+    fn expand_tilde_leaves_relative_path() {
+        assert_eq!(expand_tilde("relative/path"), "relative/path");
+    }
+
+    #[test]
+    fn expand_tilde_tilde_only() {
+        let home = std::env::var("HOME").expect("HOME set");
+        assert_eq!(expand_tilde("~"), home);
     }
 
     // ------------------------------------------------------------------
@@ -561,7 +601,10 @@ mod tests {
     #[test]
     fn parse_version_long_returns_version() {
         let mut buf = Vec::new();
-        assert_eq!(parse_args(&args(&["rx", "--version"]), &mut buf), Parsed::Version);
+        assert_eq!(
+            parse_args(&args(&["rx", "--version"]), &mut buf),
+            Parsed::Version
+        );
     }
 
     #[test]
@@ -668,7 +711,12 @@ mod tests {
         let mut buf = Vec::new();
         let result = run(&args(&["rx", "-x"]), &mut buf, &MockCliDeps);
         assert!(result.is_err());
-        assert!(result.expect_err("invalid args").to_string().contains("Invalid arguments"));
+        assert!(
+            result
+                .expect_err("invalid args")
+                .to_string()
+                .contains("Invalid arguments")
+        );
     }
 
     #[test]
@@ -690,7 +738,8 @@ mod tests {
     #[test]
     fn config_defaults_repo_and_keep() {
         let c = Config::defaults();
-        assert_eq!(c.repo, DEFAULT_REPO);
+        let home = std::env::var("HOME").expect("HOME set");
+        assert_eq!(c.repo, format!("{home}/.dotfiles"));
         assert_eq!(c.keep, DEFAULT_KEEP);
     }
 
@@ -739,8 +788,6 @@ mod tests {
     // ------------------------------------------------------------------
     // error propagation via crate::test_helpers::FailingWriter
     // ------------------------------------------------------------------
-
-
 
     #[test]
     fn failing_writer_flush_returns_ok() {
@@ -862,8 +909,6 @@ mod tests {
     fn hostname_from_cmd_inner_returns_none_on_none() {
         assert!(hostname_from_cmd_inner(None).is_none());
     }
-
-
 
     #[test]
     fn config_display_full_format() {
