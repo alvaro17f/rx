@@ -888,8 +888,14 @@ mod tests {
     }
 
     #[test]
-    fn hostname_from_cmd_returns_some_on_unix() {
-        let result = hostname_from_cmd();
+    fn hostname_from_cmd_inner_returns_some_on_valid_output() {
+        use std::os::unix::process::ExitStatusExt;
+        let output = Some(std::process::Output {
+            status: std::process::ExitStatus::from_raw(0),
+            stdout: b"myhost\n".to_vec(),
+            stderr: Vec::new(),
+        });
+        let result = hostname_from_cmd_inner(output);
         assert!(result.is_some());
         assert!(!result.expect("hostname").trim().is_empty());
     }
