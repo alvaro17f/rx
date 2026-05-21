@@ -64,6 +64,9 @@ mod tests {
     fn from_io_error_produces_io_variant() {
         let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "file");
         let err: Error = io_err.into();
-        assert!(matches!(err, Error::Io(_)));
+        assert_eq!(
+            std::mem::discriminant(&err),
+            std::mem::discriminant(&Error::Io(std::io::Error::other("")))
+        );
     }
 }

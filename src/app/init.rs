@@ -7,7 +7,7 @@ use crate::error::Error;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Parsed CLI configuration.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Config {
     pub repo: String,
     pub hostname: String,
@@ -115,7 +115,7 @@ pub fn config_print<W: Write>(writer: &mut W, config: &Config) -> Result<(), Err
 }
 
 /// Result of parsing command-line arguments.
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Parsed {
     Help,
     Version,
@@ -317,60 +317,55 @@ mod tests {
     #[test]
     fn parse_no_args_yields_defaults() {
         let mut buf = Vec::new();
-        match parse_args(&args(&["rx"]), &mut buf) {
-            Parsed::Run(c) => {
-                assert_eq!(c.repo, "~/.dotfiles");
-                assert_eq!(c.keep, 10);
-                assert!(!c.update);
-                assert!(!c.diff);
-            }
-            other => panic!("expected Run, got {other:?}"),
-        }
+        assert_eq!(
+            parse_args(&args(&["rx"]), &mut buf),
+            Parsed::Run(Config::defaults())
+        );
     }
 
     #[test]
     fn parse_help_flag_returns_help() {
         let mut buf = Vec::new();
-        assert!(matches!(
+        assert_eq!(
             parse_args(&args(&["rx", "-h"]), &mut buf),
             Parsed::Help
-        ));
+        );
     }
 
     #[test]
     fn parse_help_word_returns_help() {
         let mut buf = Vec::new();
-        assert!(matches!(
+        assert_eq!(
             parse_args(&args(&["rx", "help"]), &mut buf),
             Parsed::Help
-        ));
+        );
     }
 
     #[test]
     fn parse_version_flag_returns_version() {
         let mut buf = Vec::new();
-        assert!(matches!(
+        assert_eq!(
             parse_args(&args(&["rx", "-v"]), &mut buf),
             Parsed::Version
-        ));
+        );
     }
 
     #[test]
     fn parse_version_word_returns_version() {
         let mut buf = Vec::new();
-        assert!(matches!(
+        assert_eq!(
             parse_args(&args(&["rx", "version"]), &mut buf),
             Parsed::Version
-        ));
+        );
     }
 
     #[test]
     fn parse_unknown_argument_returns_error() {
         let mut buf = Vec::new();
-        assert!(matches!(
+        assert_eq!(
             parse_args(&args(&["rx", "unknown"]), &mut buf),
             Parsed::Error
-        ));
+        );
         assert!(String::from_utf8(buf).unwrap().contains("Unknown argument"));
     }
 
@@ -381,10 +376,10 @@ mod tests {
     #[test]
     fn parse_r_missing_value_returns_error() {
         let mut buf = Vec::new();
-        assert!(matches!(
+        assert_eq!(
             parse_args(&args(&["rx", "-r"]), &mut buf),
             Parsed::Error
-        ));
+        );
         assert!(
             String::from_utf8(buf)
                 .unwrap()
@@ -395,10 +390,10 @@ mod tests {
     #[test]
     fn parse_n_missing_value_returns_error() {
         let mut buf = Vec::new();
-        assert!(matches!(
+        assert_eq!(
             parse_args(&args(&["rx", "-n"]), &mut buf),
             Parsed::Error
-        ));
+        );
         assert!(
             String::from_utf8(buf)
                 .unwrap()
@@ -409,38 +404,44 @@ mod tests {
     #[test]
     fn parse_k_non_numeric_returns_error() {
         let mut buf = Vec::new();
-        assert!(matches!(
+        assert_eq!(
             parse_args(&args(&["rx", "-k", "abc"]), &mut buf),
             Parsed::Error
-        ));
+        );
         assert!(String::from_utf8(buf).unwrap().contains("not numeric"));
     }
 
     #[test]
     fn parse_r_with_value_sets_repo() {
         let mut buf = Vec::new();
-        match parse_args(&args(&["rx", "-r", "/path/to/repo"]), &mut buf) {
-            Parsed::Run(c) => assert_eq!(c.repo, "/path/to/repo"),
-            other => panic!("expected Run, got {other:?}"),
-        }
+        let mut expected = Config::defaults();
+        expected.repo = String::from("/path/to/repo");
+        assert_eq!(
+            parse_args(&args(&["rx", "-r", "/path/to/repo"]), &mut buf),
+            Parsed::Run(expected)
+        );
     }
 
     #[test]
     fn parse_n_with_value_sets_hostname() {
         let mut buf = Vec::new();
-        match parse_args(&args(&["rx", "-n", "myhost"]), &mut buf) {
-            Parsed::Run(c) => assert_eq!(c.hostname, "myhost"),
-            other => panic!("expected Run, got {other:?}"),
-        }
+        let mut expected = Config::defaults();
+        expected.hostname = String::from("myhost");
+        assert_eq!(
+            parse_args(&args(&["rx", "-n", "myhost"]), &mut buf),
+            Parsed::Run(expected)
+        );
     }
 
     #[test]
     fn parse_k_with_value_sets_keep() {
         let mut buf = Vec::new();
-        match parse_args(&args(&["rx", "-k", "5"]), &mut buf) {
-            Parsed::Run(c) => assert_eq!(c.keep, 5),
-            other => panic!("expected Run, got {other:?}"),
-        }
+        let mut expected = Config::defaults();
+        expected.keep = 5;
+        assert_eq!(
+            parse_args(&args(&["rx", "-k", "5"]), &mut buf),
+            Parsed::Run(expected)
+        );
     }
 
     // ------------------------------------------------------------------
@@ -450,69 +451,73 @@ mod tests {
     #[test]
     fn parse_d_flag_sets_diff() {
         let mut buf = Vec::new();
-        match parse_args(&args(&["rx", "-d"]), &mut buf) {
-            Parsed::Run(c) => assert!(c.diff),
-            other => panic!("expected Run, got {other:?}"),
-        }
+        let mut expected = Config::defaults();
+        expected.diff = true;
+        assert_eq!(
+            parse_args(&args(&["rx", "-d"]), &mut buf),
+            Parsed::Run(expected)
+        );
     }
 
     #[test]
     fn parse_u_flag_sets_update() {
         let mut buf = Vec::new();
-        match parse_args(&args(&["rx", "-u"]), &mut buf) {
-            Parsed::Run(c) => assert!(c.update),
-            other => panic!("expected Run, got {other:?}"),
-        }
+        let mut expected = Config::defaults();
+        expected.update = true;
+        assert_eq!(
+            parse_args(&args(&["rx", "-u"]), &mut buf),
+            Parsed::Run(expected)
+        );
     }
 
     #[test]
     fn parse_d_and_u_together() {
         let mut buf = Vec::new();
-        match parse_args(&args(&["rx", "-d", "-u"]), &mut buf) {
-            Parsed::Run(c) => {
-                assert!(c.diff);
-                assert!(c.update);
-            }
-            other => panic!("expected Run, got {other:?}"),
-        }
+        let mut expected = Config::defaults();
+        expected.update = true;
+        expected.diff = true;
+        assert_eq!(
+            parse_args(&args(&["rx", "-d", "-u"]), &mut buf),
+            Parsed::Run(expected)
+        );
     }
 
     #[test]
     fn parse_combined_flags_and_values() {
         let mut buf = Vec::new();
-        match parse_args(
-            &args(&[
-                "rx", "-d", "-u", "-r", "/my/repo", "-n", "myhost", "-k", "3",
-            ]),
-            &mut buf,
-        ) {
-            Parsed::Run(c) => {
-                assert!(c.diff);
-                assert!(c.update);
-                assert_eq!(c.repo, "/my/repo");
-                assert_eq!(c.hostname, "myhost");
-                assert_eq!(c.keep, 3);
-            }
-            other => panic!("expected Run, got {other:?}"),
-        }
+        let mut expected = Config::defaults();
+        expected.repo = String::from("/my/repo");
+        expected.hostname = String::from("myhost");
+        expected.keep = 3;
+        expected.update = true;
+        expected.diff = true;
+        assert_eq!(
+            parse_args(
+                &args(&[
+                    "rx", "-d", "-u", "-r", "/my/repo", "-n", "myhost", "-k", "3",
+                ]),
+                &mut buf,
+            ),
+            Parsed::Run(expected)
+        );
     }
 
     #[test]
     fn parse_k_then_h_early_returns_help() {
         let mut buf = Vec::new();
-        assert!(matches!(
+        assert_eq!(
             parse_args(&args(&["rx", "-k", "5", "-h"]), &mut buf),
             Parsed::Help
-        ));
+        );
     }
 
     #[test]
     fn parse_unknown_flag_returns_error() {
         let mut buf = Vec::new();
-        assert!(matches!(
+        assert_eq!(
             parse_args(&args(&["rx", "-x"]), &mut buf),
             Parsed::Error
-        ));
+        );
         assert!(String::from_utf8(buf).unwrap().contains("Unknown flag"));
     }
 
@@ -610,6 +615,12 @@ mod tests {
         fn flush(&mut self) -> io::Result<()> {
             Ok(())
         }
+    }
+
+    #[test]
+    fn failing_writer_flush_returns_ok() {
+        let mut w = FailingWriter;
+        assert!(io::Write::flush(&mut w).is_ok());
     }
 
     struct CountingWriter {
@@ -727,6 +738,23 @@ mod tests {
     fn print_config_line_error_propagation() {
         let mut writer = FailingWriter;
         assert!(print_config_line(&mut writer, "k", "v", true).is_err());
+    }
+
+    #[test]
+    fn default_hostname_runs_without_panic() {
+        let _ = default_hostname();
+    }
+
+    #[test]
+    fn config_display_full_format() {
+        let c = Config {
+            repo: String::from("r"),
+            hostname: String::from("h"),
+            keep: 1,
+            update: true,
+            diff: false,
+        };
+        assert_eq!(c.to_string(), "Config { repo: r, hostname: h, keep: 1, update: true, diff: false }");
     }
 
     // ------------------------------------------------------------------

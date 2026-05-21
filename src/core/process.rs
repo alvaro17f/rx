@@ -60,7 +60,10 @@ mod tests {
     fn run_shell_not_found_returns_io_error() {
         let result = run_shell("nonexistent_shell_zxy123", "true", false);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), Error::Io(_)));
+        assert_eq!(
+            std::mem::discriminant(&result.unwrap_err()),
+            std::mem::discriminant(&Error::Io(std::io::Error::other("")))
+        );
     }
 
     #[test]
